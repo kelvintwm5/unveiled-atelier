@@ -37,7 +37,7 @@ export default function AppShell({ auth, onSignOut }: AppShellProps) {
         {activeView === 'transactions' && (
           <TransactionsView mode={mode} accessToken={accessToken} />
         )}
-        {activeView === 'chat' && <ChatView />}
+        {activeView === 'chat' && <ChatView mode={mode} accessToken={accessToken} />}
         {activeView === 'monthly' && (
           <MonthlySummaryView mode={mode} accessToken={accessToken} />
         )}
