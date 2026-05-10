@@ -1,0 +1,7 @@
+/* These three lines import all of Tailwind's styles.
+   - base:       resets browser defaults (margins, font sizes, etc.)
+   - components: pre-built component classes (rarely used directly)
+   - utilities:  the actual utility classes like flex, px-4, text-sm, etc. */
+@tailwind base;
+@tailwind components;
+@tailwind utilities;

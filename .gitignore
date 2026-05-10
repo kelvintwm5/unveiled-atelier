@@ -1,0 +1,16 @@
+# Dependencies
+node_modules/
+
+# Build output
+dist/
+
+# Environment variables — never commit API keys
+.env
+.env.local
+
+# Google OAuth files — contain your personal access tokens
+credentials.json
+token.json
+
+# macOS
+.DS_Store
