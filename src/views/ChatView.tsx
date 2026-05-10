@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
+import ReactMarkdown from 'react-markdown'
 import { fetchTransactions, fetchMonthlySummary } from '../lib/sheets'
 import type { Transaction, MonthlySummary } from '../types'
 
@@ -118,7 +119,7 @@ export default function ChatView({ mode, accessToken }: Props) {
           msg.role === 'user' ? (
             <UserBubble key={i}>{msg.content}</UserBubble>
           ) : (
-            <AssistantBubble key={i}>{msg.content}</AssistantBubble>
+            <AssistantBubble key={i} markdown={msg.content} />
           )
         )}
 
@@ -170,7 +171,7 @@ export default function ChatView({ mode, accessToken }: Props) {
   )
 }
 
-function AssistantBubble({ children }: { children: React.ReactNode }) {
+function AssistantBubble({ children, markdown }: { children?: React.ReactNode; markdown?: string }) {
   return (
     <div className="flex gap-3 max-w-2xl">
       <div className="w-8 h-8 rounded-full bg-rose-100 flex items-center justify-center
@@ -178,8 +179,23 @@ function AssistantBubble({ children }: { children: React.ReactNode }) {
         UA
       </div>
       <div className="bg-white border border-stone-200 rounded-2xl rounded-tl-none
-                      px-4 py-3 text-sm text-stone-700 leading-relaxed whitespace-pre-wrap">
-        {children}
+                      px-4 py-3 text-sm text-stone-700 leading-relaxed">
+        {markdown != null ? (
+          <ReactMarkdown
+            components={{
+              p:      ({ children }) => <p className="mb-2 last:mb-0">{children}</p>,
+              strong: ({ children }) => <strong className="font-semibold text-stone-800">{children}</strong>,
+              ul:     ({ children }) => <ul className="list-disc pl-4 mb-2 space-y-0.5">{children}</ul>,
+              ol:     ({ children }) => <ol className="list-decimal pl-4 mb-2 space-y-0.5">{children}</ol>,
+              li:     ({ children }) => <li>{children}</li>,
+              h3:     ({ children }) => <h3 className="font-semibold text-stone-800 mt-2 mb-1">{children}</h3>,
+            }}
+          >
+            {markdown}
+          </ReactMarkdown>
+        ) : (
+          children
+        )}
       </div>
     </div>
   )
