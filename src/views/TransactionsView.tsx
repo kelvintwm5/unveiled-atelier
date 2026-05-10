@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { fetchTransactions, formatSGD } from '../lib/sheets'
 import type { Transaction } from '../types'
 
@@ -14,6 +14,11 @@ const COLUMNS = [
   { key: 'notes',         label: 'Notes' },
 ]
 
+const MONTHS = [
+  'January', 'February', 'March', 'April', 'May', 'June',
+  'July', 'August', 'September', 'October', 'November', 'December',
+]
+
 interface Props {
   mode: 'demo' | 'app'
   accessToken?: string
@@ -23,6 +28,8 @@ export default function TransactionsView({ mode, accessToken }: Props) {
   const [data, setData]       = useState<Transaction[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError]     = useState<string | null>(null)
+  const [filterYear, setFilterYear]   = useState<string>('all')
+  const [filterMonth, setFilterMonth] = useState<string>('all')
 
   useEffect(() => {
     setLoading(true)
@@ -31,22 +38,79 @@ export default function TransactionsView({ mode, accessToken }: Props) {
       .then(setData)
       .catch(e => setError(e.message))
       .finally(() => setLoading(false))
-  }, [mode, accessToken]) // re-fetch if auth changes
+  }, [mode, accessToken])
+
+  // Derive available years from the data
+  const years = useMemo(() => {
+    const set = new Set(data.map(tx => tx.date.slice(0, 4)).filter(Boolean))
+    return Array.from(set).sort()
+  }, [data])
+
+  const filtered = useMemo(() => {
+    return data.filter(tx => {
+      const [year, month] = tx.date.split('-')
+      if (filterYear !== 'all' && year !== filterYear) return false
+      if (filterMonth !== 'all' && parseInt(month) !== parseInt(filterMonth)) return false
+      return true
+    })
+  }, [data, filterYear, filterMonth])
 
   return (
     <div className="h-full flex flex-col">
 
-      <div className="px-8 py-6 border-b border-stone-200 bg-white shrink-0 flex items-center justify-between">
-        <div>
-          <h2 className="text-xl font-semibold text-stone-800">Transactions</h2>
-          <p className="text-stone-400 text-sm mt-0.5">
-            {mode === 'demo' ? 'Sample data — sign in to see your real transactions' : 'Live from Google Sheets'}
-          </p>
+      <div className="px-8 py-6 border-b border-stone-200 bg-white shrink-0">
+        <div className="flex items-center justify-between">
+          <div>
+            <h2 className="text-xl font-semibold text-stone-800">Transactions</h2>
+            <p className="text-stone-400 text-sm mt-0.5">
+              {mode === 'demo' ? 'Sample data — sign in to see your real transactions' : 'Live from Google Sheets'}
+            </p>
+          </div>
+          {!loading && !error && (
+            <span className="text-xs bg-stone-100 text-stone-500 px-3 py-1 rounded-full">
+              {filtered.length}{filtered.length !== data.length ? ` of ${data.length}` : ''} rows
+            </span>
+          )}
         </div>
-        {!loading && !error && (
-          <span className="text-xs bg-stone-100 text-stone-500 px-3 py-1 rounded-full">
-            {data.length} rows
-          </span>
+
+        {/* Filters */}
+        {!loading && !error && data.length > 0 && (
+          <div className="flex items-center gap-3 mt-4">
+            <select
+              value={filterYear}
+              onChange={e => { setFilterYear(e.target.value); setFilterMonth('all') }}
+              className="text-sm border border-stone-200 rounded-lg px-3 py-1.5 bg-white
+                         text-stone-700 focus:outline-none focus:ring-2 focus:ring-rose-300"
+            >
+              <option value="all">All years</option>
+              {years.map(y => (
+                <option key={y} value={y}>{y}</option>
+              ))}
+            </select>
+
+            <select
+              value={filterMonth}
+              onChange={e => setFilterMonth(e.target.value)}
+              disabled={filterYear === 'all'}
+              className="text-sm border border-stone-200 rounded-lg px-3 py-1.5 bg-white
+                         text-stone-700 focus:outline-none focus:ring-2 focus:ring-rose-300
+                         disabled:opacity-40 disabled:cursor-not-allowed"
+            >
+              <option value="all">All months</option>
+              {MONTHS.map((m, i) => (
+                <option key={m} value={String(i + 1)}>{m}</option>
+              ))}
+            </select>
+
+            {(filterYear !== 'all' || filterMonth !== 'all') && (
+              <button
+                onClick={() => { setFilterYear('all'); setFilterMonth('all') }}
+                className="text-xs text-stone-400 hover:text-stone-600 transition-colors underline"
+              >
+                Clear
+              </button>
+            )}
+          </div>
         )}
       </div>
 
@@ -90,7 +154,7 @@ export default function TransactionsView({ mode, accessToken }: Props) {
                 </tr>
               )}
 
-              {!loading && !error && data.map((tx, i) => (
+              {!loading && !error && filtered.map((tx, i) => (
                 <tr key={i} className="border-b border-stone-100 hover:bg-stone-50 transition-colors">
                   <td className="px-4 py-3 text-stone-500 whitespace-nowrap">{tx.date}</td>
                   <td className="px-4 py-3">
@@ -118,10 +182,10 @@ export default function TransactionsView({ mode, accessToken }: Props) {
                 </tr>
               ))}
 
-              {!loading && !error && data.length === 0 && (
+              {!loading && !error && filtered.length === 0 && (
                 <tr>
                   <td colSpan={COLUMNS.length} className="px-4 py-16 text-center text-stone-400 text-sm">
-                    No transactions found
+                    {data.length > 0 ? 'No transactions match the selected filters' : 'No transactions found'}
                   </td>
                 </tr>
               )}

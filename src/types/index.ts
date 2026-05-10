@@ -19,6 +19,15 @@ export interface IrasSummary {
   adjustedProfit: number
 }
 
+// One row from the Monthly Summary tab
+export interface MonthlySummary {
+  month: string
+  income: number
+  expenses: number
+  netProfit: number
+  profitMargin: number  // decimal: 0.25 = 25%
+}
+
 // ── Auth shapes ───────────────────────────────────────────────────────────────
 
 // The app is always in one of three states:

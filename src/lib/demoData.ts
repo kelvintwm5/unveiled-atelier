@@ -2,7 +2,7 @@
 // This is the same dataset that was written to the Google Sheet by create_sheet.py,
 // kept here so portfolio visitors can explore the full UI without signing in.
 
-import type { Transaction, IrasSummary } from '../types'
+import type { Transaction, IrasSummary, MonthlySummary } from '../types'
 
 export const DEMO_TRANSACTIONS: Transaction[] = [
   { date:'2025-01-08', type:'Income',  description:'Bridal gown package – Sarah Lim',    category:'Gown Sales',             amount:3800, paymentMethod:'PayNow',        clientName:'Sarah Lim',         receiptNo:'REC-001', notes:'Full payment' },
@@ -20,6 +20,23 @@ export const DEMO_TRANSACTIONS: Transaction[] = [
   { date:'2025-04-05', type:'Income',  description:'Alteration bundle – 3 gowns',        category:'Alteration Services',    amount:480,  paymentMethod:'PayNow',        clientName:'Various',           receiptNo:'REC-007', notes:'Walk-in clients' },
   { date:'2025-04-15', type:'Expense', description:'Accounting fees – Q1',               category:'Professional Services',  amount:350,  paymentMethod:'Bank Transfer', clientName:'',                  receiptNo:'EXP-007', notes:'Quarterly bookkeeping' },
   { date:'2025-05-02', type:'Income',  description:'Gown sales – Rebecca Ho',            category:'Gown Sales',             amount:3500, paymentMethod:'PayNow',        clientName:'Rebecca Ho',        receiptNo:'REC-008', notes:'Customised A-line' },
+]
+
+// Monthly breakdown pre-computed from DEMO_TRANSACTIONS above.
+// February is intentionally a loss month (high studio rent, low income) — realistic for a bridal business.
+export const DEMO_MONTHLY: MonthlySummary[] = [
+  { month: 'January',   income: 4080, expenses: 670,  netProfit: 3410,  profitMargin: 0.8358 },
+  { month: 'February',  income: 820,  expenses: 980,  netProfit: -160,  profitMargin: -0.1951 },
+  { month: 'March',     income: 4850, expenses: 215,  netProfit: 4635,  profitMargin: 0.9557 },
+  { month: 'April',     income: 480,  expenses: 350,  netProfit: 130,   profitMargin: 0.2708 },
+  { month: 'May',       income: 3500, expenses: 0,    netProfit: 3500,  profitMargin: 1.0 },
+  { month: 'June',      income: 0,    expenses: 0,    netProfit: 0,     profitMargin: 0 },
+  { month: 'July',      income: 0,    expenses: 0,    netProfit: 0,     profitMargin: 0 },
+  { month: 'August',    income: 0,    expenses: 0,    netProfit: 0,     profitMargin: 0 },
+  { month: 'September', income: 0,    expenses: 0,    netProfit: 0,     profitMargin: 0 },
+  { month: 'October',   income: 0,    expenses: 0,    netProfit: 0,     profitMargin: 0 },
+  { month: 'November',  income: 0,    expenses: 0,    netProfit: 0,     profitMargin: 0 },
+  { month: 'December',  income: 0,    expenses: 0,    netProfit: 0,     profitMargin: 0 },
 ]
 
 // Pre-computed from the transactions above — matches what the Google Sheet formulas calculate

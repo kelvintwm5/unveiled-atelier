@@ -6,8 +6,8 @@
 //   app  → fetches from Google Sheets using a short-lived OAuth access token
 //          (token comes from the user signing in — never stored, lives in memory only)
 
-import type { Transaction, IrasSummary } from '../types'
-import { DEMO_TRANSACTIONS, DEMO_IRAS } from './demoData'
+import type { Transaction, IrasSummary, MonthlySummary } from '../types'
+import { DEMO_TRANSACTIONS, DEMO_IRAS, DEMO_MONTHLY } from './demoData'
 
 // The real sheet ID — only used when the user is authenticated.
 // Stored in .env so it's not hardcoded in source code published to GitHub.
@@ -74,6 +74,23 @@ export async function fetchTransactions(
       receiptNo:     String(row[7] ?? ''),
       notes:         String(row[8] ?? ''),
     }))
+}
+
+/** Fetch all 12 monthly summary rows. Returns demo data or live data depending on mode. */
+export async function fetchMonthlySummary(
+  mode: 'demo' | 'app',
+  accessToken?: string
+): Promise<MonthlySummary[]> {
+  if (mode === 'demo') return DEMO_MONTHLY
+
+  const rows = await getRange("'Monthly Summary'!A2:E13", accessToken!)
+  return rows.map(row => ({
+    month:         String(row[0] ?? ''),
+    income:        Number(row[1]) || 0,
+    expenses:      Number(row[2]) || 0,
+    netProfit:     Number(row[3]) || 0,
+    profitMargin:  Number(row[4]) || 0,
+  }))
 }
 
 /** Fetch the 4 IRAS line totals. Returns demo data or live data depending on mode. */

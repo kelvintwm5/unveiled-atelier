@@ -6,9 +6,10 @@ import Sidebar from '../components/Sidebar'
 import TransactionsView from '../views/TransactionsView'
 import ChatView from '../views/ChatView'
 import TaxSummaryView from '../views/TaxSummaryView'
+import MonthlySummaryView from '../views/MonthlySummaryView'
 import type { AuthState } from '../types'
 
-export type View = 'transactions' | 'chat' | 'tax'
+export type View = 'transactions' | 'chat' | 'monthly' | 'tax'
 
 interface AppShellProps {
   auth: AuthState             // 'demo' or 'app' (landing is never passed here)
@@ -37,6 +38,9 @@ export default function AppShell({ auth, onSignOut }: AppShellProps) {
           <TransactionsView mode={mode} accessToken={accessToken} />
         )}
         {activeView === 'chat' && <ChatView />}
+        {activeView === 'monthly' && (
+          <MonthlySummaryView mode={mode} accessToken={accessToken} />
+        )}
         {activeView === 'tax' && (
           <TaxSummaryView mode={mode} accessToken={accessToken} />
         )}
