@@ -61,20 +61,39 @@ export default function Sidebar({ activeView, onNavigate, mode, onSignOut }: Sid
     <aside className="w-60 bg-stone-900 flex flex-col shrink-0">
 
       {/* Brand + mode badge */}
-      <div className="px-6 py-8 border-b border-stone-800">
-        <p className="text-stone-500 text-xs tracking-widest uppercase mb-1">Budget</p>
-        <h1 className="text-white text-lg font-semibold tracking-wide leading-snug">
-          Unveiled<br />Atelier
-        </h1>
+      <div className="px-6 pt-7 pb-5 border-b border-stone-800">
+        {/* Logo — matches the Unveiled Atelier brand identity */}
+        <div className="flex flex-col items-center text-center mb-3">
+          <span
+            style={{ fontFamily: "'Pinyon Script', cursive", fontSize: '2.6rem', lineHeight: 1.1 }}
+            className="text-stone-200 leading-none"
+          >
+            Unveiled
+          </span>
+          <span
+            style={{ fontFamily: "'Cormorant Garamond', serif", letterSpacing: '0.3em', fontSize: '0.65rem' }}
+            className="text-stone-400 uppercase mt-1"
+          >
+            Atelier
+          </span>
+          <span
+            style={{ fontFamily: "'Cormorant Garamond', serif", letterSpacing: '0.25em', fontSize: '0.55rem' }}
+            className="text-stone-500 uppercase mt-0.5"
+          >
+            by Esther
+          </span>
+        </div>
         {/* Shows whether the user is on demo data or their real live data */}
-        <span className={[
-          'inline-block mt-3 text-xs font-semibold px-2 py-0.5 rounded-full',
-          mode === 'demo'
-            ? 'bg-amber-900/50 text-amber-400'
-            : 'bg-emerald-900/50 text-emerald-400',
-        ].join(' ')}>
-          {mode === 'demo' ? 'Demo data' : 'Live data'}
-        </span>
+        <div className="flex justify-center">
+          <span className={[
+            'inline-block text-xs font-semibold px-2 py-0.5 rounded-full',
+            mode === 'demo'
+              ? 'bg-amber-900/50 text-amber-400'
+              : 'bg-emerald-900/50 text-emerald-400',
+          ].join(' ')}>
+            {mode === 'demo' ? 'Demo data' : 'Live data'}
+          </span>
+        </div>
       </div>
 
       {/* Navigation */}
