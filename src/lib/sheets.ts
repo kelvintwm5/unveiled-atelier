@@ -53,6 +53,45 @@ async function getRange(
   return data.values ?? []
 }
 
+/** Append a new transaction row to the Transactions sheet. Only valid in app mode. */
+export async function appendTransaction(
+  accessToken: string,
+  tx: Transaction,
+): Promise<void> {
+  const row = [
+    tx.date,
+    tx.type,
+    tx.description,
+    tx.category,
+    tx.amount,
+    tx.paymentMethod,
+    tx.clientName,
+    tx.receiptNo,
+    tx.notes,
+  ]
+
+  const url = new URL(
+    `https://sheets.googleapis.com/v4/spreadsheets/${REAL_SHEET_ID}/values/${encodeURIComponent('Transactions!A:I')}:append`
+  )
+  url.searchParams.set('valueInputOption', 'RAW')
+  url.searchParams.set('insertDataOption', 'INSERT_ROWS')
+
+  const res = await fetch(url.toString(), {
+    method: 'POST',
+    headers: {
+      Authorization: `Bearer ${accessToken}`,
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({ values: [row] }),
+  })
+
+  if (res.status === 401) throw new Error('Session expired — please sign in again.')
+  if (!res.ok) {
+    const body = await res.json().catch(() => ({}))
+    throw new Error(body?.error?.message ?? `Sheets API returned HTTP ${res.status}`)
+  }
+}
+
 /** Fetch all transactions. Returns demo data or live data depending on mode. */
 export async function fetchTransactions(
   mode: 'demo' | 'app',

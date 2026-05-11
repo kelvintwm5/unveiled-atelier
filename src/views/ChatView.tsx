@@ -91,7 +91,7 @@ export default function ChatView({ mode, accessToken }: Props) {
     <div className="h-full flex flex-col">
 
       {/* Header */}
-      <div className="px-8 py-6 border-b border-stone-200 bg-white shrink-0">
+      <div className="px-4 py-4 md:px-8 md:py-6 border-b border-stone-200 bg-white shrink-0">
         <h2 className="text-xl font-semibold text-stone-800">Chat</h2>
         <p className="text-stone-400 text-sm mt-0.5">
           {loadingData
@@ -101,7 +101,7 @@ export default function ChatView({ mode, accessToken }: Props) {
       </div>
 
       {/* Message list */}
-      <div className="flex-1 overflow-y-auto px-8 py-6 space-y-5">
+      <div className="flex-1 overflow-y-auto px-4 py-4 md:px-8 md:py-6 space-y-5">
 
         {/* Welcome */}
         <AssistantBubble>
@@ -140,7 +140,7 @@ export default function ChatView({ mode, accessToken }: Props) {
       </div>
 
       {/* Input bar */}
-      <div className="shrink-0 px-8 py-4 border-t border-stone-200 bg-white">
+      <div className="shrink-0 px-4 py-3 md:px-8 md:py-4 border-t border-stone-200 bg-white">
         <div className="flex gap-3 items-end">
           <textarea
             value={input}

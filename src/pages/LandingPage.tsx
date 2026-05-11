@@ -8,7 +8,7 @@ interface LandingPageProps {
 
 // The Google sign-in button requests read-only access to the user's Google Sheets.
 // The access token returned is short-lived (1 hour) and stored only in memory.
-const SHEETS_READONLY_SCOPE = 'https://www.googleapis.com/auth/spreadsheets.readonly'
+const SHEETS_SCOPE = 'https://www.googleapis.com/auth/spreadsheets'
 
 const FEATURES = [
   {
@@ -51,7 +51,7 @@ export default function LandingPage({ onDemo, onAuth }: LandingPageProps) {
   // flow: 'implicit' returns an access token directly (no backend needed).
   // The token is scoped to read-only Sheets — the user can't accidentally write data.
   const login = useGoogleLogin({
-    scope: SHEETS_READONLY_SCOPE,
+    scope: SHEETS_SCOPE,
     onSuccess: tokenResponse => {
       setSigningIn(false)
       onAuth(tokenResponse.access_token)

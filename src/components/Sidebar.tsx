@@ -58,7 +58,7 @@ const navItems: NavItem[] = [
 
 export default function Sidebar({ activeView, onNavigate, mode, onSignOut }: SidebarProps) {
   return (
-    <aside className="w-60 bg-stone-900 flex flex-col shrink-0">
+    <aside className="hidden md:flex w-60 bg-stone-900 flex-col shrink-0">
 
       {/* Brand + mode badge */}
       <div className="px-6 pt-7 pb-5 border-b border-stone-800">

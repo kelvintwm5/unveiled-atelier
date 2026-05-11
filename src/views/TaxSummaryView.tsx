@@ -55,7 +55,7 @@ export default function TaxSummaryView({ mode, accessToken }: Props) {
   return (
     <div className="h-full flex flex-col">
 
-      <div className="px-8 py-6 border-b border-stone-200 bg-white shrink-0">
+      <div className="px-4 py-4 md:px-8 md:py-6 border-b border-stone-200 bg-white shrink-0">
         <h2 className="text-xl font-semibold text-stone-800">Tax Summary</h2>
         <p className="text-stone-400 text-sm mt-0.5">
           {mode === 'demo'
@@ -64,7 +64,7 @@ export default function TaxSummaryView({ mode, accessToken }: Props) {
         </p>
       </div>
 
-      <div className="flex-1 overflow-y-auto px-8 py-6">
+      <div className="flex-1 overflow-y-auto px-4 py-4 md:px-8 md:py-6">
 
         <div className="flex items-center gap-3 mb-6">
           <span className="text-sm text-stone-600">Year of Assessment</span>
@@ -83,7 +83,7 @@ export default function TaxSummaryView({ mode, accessToken }: Props) {
             const amount = data?.[key] ?? null
             return (
               <div key={line} className={`border rounded-xl px-6 py-5 ${cardClass}`}>
-                <div className="flex items-start justify-between gap-6">
+                <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between sm:gap-6">
                   <div>
                     <span className={`text-xs font-bold px-2 py-0.5 rounded-full ${badgeClass}`}>
                       Line {line}
@@ -91,7 +91,7 @@ export default function TaxSummaryView({ mode, accessToken }: Props) {
                     <h3 className={`font-semibold text-base mt-2 ${labelClass}`}>{label}</h3>
                     <p className="text-xs text-stone-500 mt-0.5">{description}</p>
                   </div>
-                  <div className="text-right shrink-0">
+                  <div className="sm:text-right shrink-0">
                     {loading ? (
                       <div className="h-7 w-28 bg-stone-200 rounded animate-pulse" />
                     ) : amount !== null ? (

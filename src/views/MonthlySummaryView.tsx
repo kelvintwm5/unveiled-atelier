@@ -85,10 +85,10 @@ export default function MonthlySummaryView({ mode, accessToken }: MonthlySummary
   }
 
   return (
-    <div className="h-full overflow-y-auto px-8 py-8">
+    <div className="h-full overflow-y-auto px-4 py-4 md:px-8 md:py-8">
 
       {/* Header + year selector */}
-      <div className="flex items-start justify-between mb-8">
+      <div className="flex items-start justify-between mb-6 md:mb-8">
         <div>
           <h2 className="text-2xl font-semibold text-stone-800">Monthly Summary</h2>
           <p className="text-stone-500 text-sm mt-1">
@@ -110,7 +110,7 @@ export default function MonthlySummaryView({ mode, accessToken }: MonthlySummary
       </div>
 
       {/* KPI strip */}
-      <div className="grid grid-cols-3 gap-4 mb-8">
+      <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 md:gap-4 mb-6 md:mb-8">
         <KpiCard label="Total Income" value={formatSGD(totalIncome)} positive />
         <KpiCard label="Total Expenses" value={formatSGD(totalExpenses)} />
         <KpiCard
@@ -123,7 +123,7 @@ export default function MonthlySummaryView({ mode, accessToken }: MonthlySummary
 
       {/* Chart */}
       {activeRows.length > 0 && (
-        <div className="bg-white rounded-2xl border border-stone-200 p-6 mb-8">
+        <div className="bg-white rounded-2xl border border-stone-200 p-4 md:p-6 mb-6 md:mb-8">
           <h3 className="text-sm font-medium text-stone-600 mb-5">Net profit by month</h3>
           <div className="flex items-end gap-3 h-40">
             {activeRows.map(row => {
@@ -155,7 +155,7 @@ export default function MonthlySummaryView({ mode, accessToken }: MonthlySummary
       )}
 
       {/* Table */}
-      <div className="bg-white rounded-2xl border border-stone-200 overflow-hidden">
+      <div className="bg-white rounded-2xl border border-stone-200 overflow-x-auto">
         <table className="w-full text-sm">
           <thead>
             <tr className="border-b border-stone-100 bg-stone-50">
