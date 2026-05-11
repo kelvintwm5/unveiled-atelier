@@ -26,6 +26,16 @@ export interface InvoiceParams {
   lineItems:     LineItem[]
 }
 
+export interface DepositInvoice {
+  invoiceNo:     string
+  date:          string
+  clientName:    string
+  clientEmail:   string
+  clientContact: string
+  templateType:  TemplateType
+  lineItems:     LineItem[]
+}
+
 // ─── Formatting helpers ───────────────────────────────────────────────────────
 
 export function fmtSGD(n: number): string {
@@ -160,7 +170,7 @@ async function ensureInvoicesSheet(token: string) {
     await apiPost(
       `https://sheets.googleapis.com/v4/spreadsheets/${REAL_SHEET_ID}/values/Invoices!A1:append?valueInputOption=RAW`,
       token,
-      { values: [['Invoice No', 'Date', 'Client Name', 'Email', 'Contact', 'Type', 'Invoice #', 'Amount (SGD)', 'Document Link']] },
+      { values: [['Invoice No', 'Date', 'Client Name', 'Email', 'Contact', 'Type', 'Invoice #', 'Amount (SGD)', 'Document Link', 'Line Items']] },
     )
   }
 }
@@ -168,19 +178,48 @@ async function ensureInvoicesSheet(token: string) {
 async function logInvoice(token: string, row: {
   invoiceNo: string; date: string; clientName: string; clientEmail: string
   clientContact: string; templateType: TemplateType; invoiceType: InvoiceType
-  amount: number; docUrl: string
+  amount: number; docUrl: string; lineItems: LineItem[]
 }) {
   await ensureInvoicesSheet(token)
   await apiPost(
-    `https://sheets.googleapis.com/v4/spreadsheets/${REAL_SHEET_ID}/values/Invoices!A:I:append?valueInputOption=RAW&insertDataOption=INSERT_ROWS`,
+    `https://sheets.googleapis.com/v4/spreadsheets/${REAL_SHEET_ID}/values/Invoices!A:J:append?valueInputOption=RAW&insertDataOption=INSERT_ROWS`,
     token,
     { values: [[
       row.invoiceNo, row.date, row.clientName, row.clientEmail, row.clientContact,
       row.templateType === 'rental' ? 'Rental' : 'Bespoke',
       row.invoiceType === 'deposit' ? '1st — Deposit' : '2nd — Final Payment',
-      row.amount, row.docUrl,
+      row.amount, row.docUrl, JSON.stringify(row.lineItems),
     ]] },
   )
+}
+
+export async function fetchDepositInvoices(token: string): Promise<DepositInvoice[]> {
+  try {
+    const data = await apiGet(
+      `https://sheets.googleapis.com/v4/spreadsheets/${REAL_SHEET_ID}/values/Invoices!A:J`,
+      token,
+    )
+    const rows = (data.values ?? []) as string[][]
+    return rows.slice(1)
+      .filter(r => r[6] === '1st — Deposit' && r[9])
+      .map(r => {
+        let lineItems: LineItem[] = []
+        try { lineItems = JSON.parse(r[9]) } catch { /* malformed JSON — skip */ }
+        return {
+          invoiceNo:     r[0],
+          date:          r[1],
+          clientName:    r[2],
+          clientEmail:   r[3],
+          clientContact: r[4],
+          templateType:  (r[5] === 'Rental' ? 'rental' : 'bespoke') as TemplateType,
+          lineItems,
+        }
+      })
+      .filter(inv => inv.lineItems.length > 0)
+      .reverse()
+  } catch {
+    return []
+  }
 }
 
 // ─── Document helpers ─────────────────────────────────────────────────────────
@@ -361,6 +400,7 @@ export async function generateInvoice(
     clientName: params.clientName, clientEmail: params.clientEmail,
     clientContact: params.clientContact, templateType: params.templateType,
     invoiceType: params.invoiceType, amount: amtPayable, docUrl,
+    lineItems: params.lineItems,
   })
 
   return { invoiceNo, docUrl }

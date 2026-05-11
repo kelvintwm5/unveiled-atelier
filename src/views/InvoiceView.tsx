@@ -1,6 +1,7 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import {
   generateInvoice,
+  fetchDepositInvoices,
   buildTotalsRows,
   calcSubtotal,
   fmtSGD,
@@ -8,6 +9,7 @@ import {
   type LineItem,
   type TemplateType,
   type InvoiceType,
+  type DepositInvoice,
 } from '../lib/invoices'
 
 interface Props {
@@ -28,9 +30,31 @@ export default function InvoiceView({ mode, accessToken }: Props) {
   const [hasPws,        setHasPws]        = useState(true)
   const [hasWedding,    setHasWedding]    = useState(true)
   const [lineItems,     setLineItems]     = useState<LineItem[]>([EMPTY_ITEM()])
-  const [generating,    setGenerating]    = useState(false)
-  const [error,         setError]         = useState<string | null>(null)
-  const [result,        setResult]        = useState<{ invoiceNo: string; docUrl: string } | null>(null)
+  const [generating,      setGenerating]      = useState(false)
+  const [error,           setError]           = useState<string | null>(null)
+  const [result,          setResult]          = useState<{ invoiceNo: string; docUrl: string } | null>(null)
+  const [deposits,        setDeposits]        = useState<DepositInvoice[]>([])
+  const [loadingDeposits, setLoadingDeposits] = useState(false)
+  const [selectedDeposit, setSelectedDeposit] = useState('')
+
+  useEffect(() => {
+    if (invoiceType !== 'final' || !accessToken || deposits.length > 0) return
+    setLoadingDeposits(true)
+    fetchDepositInvoices(accessToken)
+      .then(setDeposits)
+      .finally(() => setLoadingDeposits(false))
+  }, [invoiceType, accessToken])
+
+  function loadFromDeposit() {
+    const dep = deposits.find(d => d.invoiceNo === selectedDeposit)
+    if (!dep) return
+    setTemplateType(dep.templateType)
+    setClientName(dep.clientName)
+    setClientEmail(dep.clientEmail)
+    setClientContact(dep.clientContact)
+    setLineItems(dep.lineItems)
+    setSelectedDeposit('')
+  }
 
   // ── Line item helpers ──────────────────────────────────────────────────────
 
@@ -91,6 +115,7 @@ export default function InvoiceView({ mode, accessToken }: Props) {
     setLineItems([EMPTY_ITEM()])
     setTemplateType('rental')
     setInvoiceType('deposit')
+    setSelectedDeposit('')
   }
 
   // ── Success state ──────────────────────────────────────────────────────────
@@ -167,6 +192,44 @@ export default function InvoiceView({ mode, accessToken }: Props) {
               />
             </div>
           </Section>
+
+          {/* ── Load from deposit ─────────────────────────────────────────── */}
+          {invoiceType === 'final' && mode === 'app' && (
+            <Section title="Load from Deposit Invoice">
+              {loadingDeposits ? (
+                <p className="text-sm text-stone-400">Fetching previous invoices…</p>
+              ) : deposits.length === 0 ? (
+                <p className="text-sm text-stone-400">
+                  No deposit invoices found. Fill in the details below manually.
+                </p>
+              ) : (
+                <div className="flex gap-2">
+                  <select
+                    value={selectedDeposit}
+                    onChange={e => setSelectedDeposit(e.target.value)}
+                    className={`${inputCls} flex-1`}
+                  >
+                    <option value="">Select a deposit invoice…</option>
+                    {deposits.map(d => (
+                      <option key={d.invoiceNo} value={d.invoiceNo}>
+                        {d.invoiceNo} — {d.clientName} ({d.date})
+                      </option>
+                    ))}
+                  </select>
+                  <button
+                    type="button"
+                    onClick={loadFromDeposit}
+                    disabled={!selectedDeposit}
+                    className="px-4 py-2 bg-stone-800 hover:bg-stone-700 text-white text-sm
+                               rounded-lg transition-colors disabled:opacity-40
+                               disabled:cursor-not-allowed shrink-0"
+                  >
+                    Load
+                  </button>
+                </div>
+              )}
+            </Section>
+          )}
 
           {/* ── Client details ─────────────────────────────────────────────── */}
           <Section title="Client Details">
