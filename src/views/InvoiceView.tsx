@@ -302,10 +302,27 @@ export default function InvoiceView({ mode, accessToken }: Props) {
 function Header() {
   return (
     <div className="px-4 py-4 md:px-8 md:py-6 border-b border-stone-200 bg-white shrink-0">
-      <h2 className="text-xl font-semibold text-stone-800">Invoice Generator</h2>
-      <p className="text-stone-400 text-sm mt-0.5">
-        Generate a Google Doc invoice and save it to Drive
-      </p>
+      <div className="flex items-center justify-between">
+        <div>
+          <h2 className="text-xl font-semibold text-stone-800">Invoice Generator</h2>
+          <p className="text-stone-400 text-sm mt-0.5">
+            Generate a Google Doc invoice and save it to Drive
+          </p>
+        </div>
+        <a
+          href="https://drive.google.com/drive/folders/1XAaHgJBcXVeOP1Mvd-8Q0OX83sOWj81r"
+          target="_blank"
+          rel="noreferrer"
+          className="flex items-center gap-1.5 text-xs text-stone-500 hover:text-rose-700
+                     border border-stone-200 hover:border-rose-300 rounded-lg px-3 py-1.5
+                     transition-colors shrink-0"
+        >
+          <svg className="w-3.5 h-3.5" viewBox="0 0 24 24" fill="currentColor">
+            <path d="M6.18 15l-2.18-3.77L8.18 3h7.64L6.18 15zm1.64 2.83L9.64 21H20l-4-6.93-8.18 3.76zM14.36 3L20 12.5 17.82 16 11.27 5.25 14.36 3z"/>
+          </svg>
+          View All Invoices
+        </a>
+      </div>
     </div>
   )
 }
