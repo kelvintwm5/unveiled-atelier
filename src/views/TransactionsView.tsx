@@ -10,7 +10,7 @@ const COLUMNS = [
   { key: 'amount',        label: 'Amount (SGD)' },
   { key: 'paymentMethod', label: 'Payment Method' },
   { key: 'clientName',    label: 'Client Name' },
-  { key: 'receiptNo',     label: 'Receipt No.' },
+  { key: 'receiptNo',     label: 'Invoice No.' },
   { key: 'notes',         label: 'Notes' },
 ]
 
@@ -382,7 +382,7 @@ function AddTransactionModal({
               />
             </Field>
 
-            <Field label="Receipt No." className="col-span-1">
+            <Field label="Invoice No." className="col-span-1">
               <input
                 type="text"
                 value={form.receiptNo}
