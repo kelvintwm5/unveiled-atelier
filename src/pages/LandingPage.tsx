@@ -8,7 +8,11 @@ interface LandingPageProps {
 
 // The Google sign-in button requests read-only access to the user's Google Sheets.
 // The access token returned is short-lived (1 hour) and stored only in memory.
-const SHEETS_SCOPE = 'https://www.googleapis.com/auth/spreadsheets'
+const SHEETS_SCOPE = [
+  'https://www.googleapis.com/auth/spreadsheets',
+  'https://www.googleapis.com/auth/drive',
+  'https://www.googleapis.com/auth/documents',
+].join(' ')
 
 const FEATURES = [
   {
