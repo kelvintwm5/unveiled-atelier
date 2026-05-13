@@ -182,7 +182,7 @@ async function logInvoice(token: string, row: {
 }) {
   await ensureInvoicesSheet(token)
   await apiPost(
-    `https://sheets.googleapis.com/v4/spreadsheets/${REAL_SHEET_ID}/values/Invoices!A:J:append?valueInputOption=RAW&insertDataOption=INSERT_ROWS`,
+    `https://sheets.googleapis.com/v4/spreadsheets/${REAL_SHEET_ID}/values/Invoices!A1:append?valueInputOption=RAW&insertDataOption=INSERT_ROWS`,
     token,
     { values: [[
       row.invoiceNo, row.date, row.clientName, row.clientEmail, row.clientContact,
