@@ -316,40 +316,6 @@ export async function generateInvoice(
   const tableEl = findTable(docForTable)
   const tableStartIndex = tableEl.startIndex as number
 
-  // 4b. Bold the label portion of date lines ("PWS Date: " / "Wedding Date: "), leave the date plain.
-  //     Search recursively so date lines inside a table in the template are also found.
-  const dateLabelReqs: unknown[] = []
-  const dateLabels: [string, number][] = [['PWS Date: ', 10], ['Wedding Date: ', 14]]
-  function scanForDateLabels(content: AnyObj[]) {
-    for (const el of content) {
-      if (el.paragraph) {
-        const elements = el.paragraph.elements as AnyObj[]
-        const text = elements.map(e => e.textRun?.content ?? '').join('')
-        for (const [prefix, len] of dateLabels) {
-          const idx = text.indexOf(prefix)
-          if (idx === -1) continue
-          const start = (elements[0].startIndex as number) + idx
-          dateLabelReqs.push({
-            updateTextStyle: {
-              range: { startIndex: start, endIndex: start + len },
-              textStyle: { bold: true },
-              fields: 'bold',
-            },
-          })
-        }
-      }
-      if (el.table) {
-        for (const row of el.table.tableRows as AnyObj[]) {
-          for (const cell of row.tableCells as AnyObj[]) {
-            scanForDateLabels(cell.content as AnyObj[])
-          }
-        }
-      }
-    }
-  }
-  scanForDateLabels(docForTable.body.content as AnyObj[])
-  if (dateLabelReqs.length > 0) await docsBatch(docId, token, dateLabelReqs)
-
   // 5. Compute amounts
   const subtotal   = calcSubtotal(params.lineItems)
   const totals     = buildTotalsRows(params.templateType, params.invoiceType, subtotal)
