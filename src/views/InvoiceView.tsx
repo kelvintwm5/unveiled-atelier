@@ -504,7 +504,7 @@ function LineItemRow({ item, index, canRemove, onChange, onRemove }: {
               className={inputCls}
             />
           </Field>
-          <Field label="Description (italic in invoice)" className="sm:col-span-2">
+          <Field label="Description" className="sm:col-span-2">
             <textarea
               value={item.description} rows={2}
               onChange={e => onChange({ description: e.target.value })}
