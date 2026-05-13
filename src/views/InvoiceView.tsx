@@ -35,7 +35,7 @@ export default function InvoiceView({ mode, accessToken }: Props) {
   const [result,          setResult]          = useState<{ invoiceNo: string; docUrl: string } | null>(null)
   const [deposits,        setDeposits]        = useState<DepositInvoice[]>([])
   const [loadingDeposits, setLoadingDeposits] = useState(false)
-  const [selectedDeposit, setSelectedDeposit] = useState('')
+  const [depositSearch,   setDepositSearch]   = useState('')
 
   useEffect(() => {
     if (invoiceType !== 'final' || !accessToken || deposits.length > 0) return
@@ -45,15 +45,20 @@ export default function InvoiceView({ mode, accessToken }: Props) {
       .finally(() => setLoadingDeposits(false))
   }, [invoiceType, accessToken])
 
-  function loadFromDeposit() {
-    const dep = deposits.find(d => d.invoiceNo === selectedDeposit)
-    if (!dep) return
+  const filteredDeposits = depositSearch.trim()
+    ? deposits.filter(d => {
+        const q = depositSearch.toLowerCase()
+        return d.clientName.toLowerCase().includes(q) || d.invoiceNo.toLowerCase().includes(q)
+      })
+    : deposits
+
+  function loadFromDeposit(dep: DepositInvoice) {
     setTemplateType(dep.templateType)
     setClientName(dep.clientName)
     setClientEmail(dep.clientEmail)
     setClientContact(dep.clientContact)
     setLineItems(dep.lineItems)
-    setSelectedDeposit('')
+    setDepositSearch('')
   }
 
   // ── Line item helpers ──────────────────────────────────────────────────────
@@ -115,7 +120,7 @@ export default function InvoiceView({ mode, accessToken }: Props) {
     setLineItems([EMPTY_ITEM()])
     setTemplateType('rental')
     setInvoiceType('deposit')
-    setSelectedDeposit('')
+    setDepositSearch('')
   }
 
   // ── Success state ──────────────────────────────────────────────────────────
@@ -203,29 +208,33 @@ export default function InvoiceView({ mode, accessToken }: Props) {
                   No deposit invoices found. Fill in the details below manually.
                 </p>
               ) : (
-                <div className="flex gap-2">
-                  <select
-                    value={selectedDeposit}
-                    onChange={e => setSelectedDeposit(e.target.value)}
-                    className={`${inputCls} flex-1`}
-                  >
-                    <option value="">Select a deposit invoice…</option>
-                    {deposits.map(d => (
-                      <option key={d.invoiceNo} value={d.invoiceNo}>
-                        {d.invoiceNo} — {d.clientName} ({d.date})
-                      </option>
-                    ))}
-                  </select>
-                  <button
-                    type="button"
-                    onClick={loadFromDeposit}
-                    disabled={!selectedDeposit}
-                    className="px-4 py-2 bg-stone-800 hover:bg-stone-700 text-white text-sm
-                               rounded-lg transition-colors disabled:opacity-40
-                               disabled:cursor-not-allowed shrink-0"
-                  >
-                    Load
-                  </button>
+                <div className="relative">
+                  <input
+                    type="text"
+                    value={depositSearch}
+                    onChange={e => setDepositSearch(e.target.value)}
+                    placeholder="Search by client name or invoice number…"
+                    className={inputCls}
+                  />
+                  {depositSearch && (
+                    <div className="absolute z-10 w-full mt-1 bg-white border border-stone-200
+                                    rounded-lg shadow-lg max-h-52 overflow-y-auto">
+                      {filteredDeposits.length === 0 ? (
+                        <p className="px-4 py-3 text-sm text-stone-400">No matching invoices</p>
+                      ) : filteredDeposits.map(d => (
+                        <button
+                          key={d.invoiceNo}
+                          type="button"
+                          onClick={() => loadFromDeposit(d)}
+                          className="w-full text-left px-4 py-2.5 hover:bg-stone-50
+                                     transition-colors border-b border-stone-100 last:border-0"
+                        >
+                          <span className="text-sm font-medium text-stone-800">{d.clientName}</span>
+                          <span className="text-xs text-stone-400 ml-2">{d.invoiceNo} · {d.date}</span>
+                        </button>
+                      ))}
+                    </div>
+                  )}
                 </div>
               )}
             </Section>
