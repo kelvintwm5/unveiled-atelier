@@ -429,10 +429,29 @@ export async function generateInvoice(
         },
       })
     }
+
+    // Quantity and amount → not bold
+    const qtyStart = cellFirstParaStart(cells[1])
+    styleReqs.push({
+      updateTextStyle: {
+        range: { startIndex: qtyStart, endIndex: qtyStart + String(item.quantity).length },
+        textStyle: { bold: false },
+        fields: 'bold',
+      },
+    })
+    const lineAmtStr = fmtNum(item.amount * item.quantity)
+    const lineAmtStart = cellFirstParaStart(cells[2])
+    styleReqs.push({
+      updateTextStyle: {
+        range: { startIndex: lineAmtStart, endIndex: lineAmtStart + lineAmtStr.length },
+        textStyle: { bold: false },
+        fields: 'bold',
+      },
+    })
   })
 
+  // Totals: bold only the Amount Payable Now row; all others plain
   totals.forEach((row, i) => {
-    if (!row.bold) return
     const cells  = (styledRows[params.lineItems.length + i + 1].tableCells as AnyObj[])
     const label0 = cellFirstParaStart(cells[0])
     const amt2   = cellFirstParaStart(cells[2])
@@ -440,14 +459,14 @@ export async function generateInvoice(
     styleReqs.push({
       updateTextStyle: {
         range: { startIndex: label0, endIndex: label0 + row.label.length },
-        textStyle: { bold: true },
+        textStyle: { bold: row.bold },
         fields: 'bold',
       },
     })
     styleReqs.push({
       updateTextStyle: {
         range: { startIndex: amt2, endIndex: amt2 + amtStr.length },
-        textStyle: { bold: true },
+        textStyle: { bold: row.bold },
         fields: 'bold',
       },
     })
