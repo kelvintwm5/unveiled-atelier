@@ -45,6 +45,13 @@ export function fmtSGD(n: number): string {
   }).format(n)}`
 }
 
+function fmtNum(n: number): string {
+  return new Intl.NumberFormat('en-SG', {
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+  }).format(n)
+}
+
 export function fmtDate(s: string): string {
   if (!s) return ''
   const d = new Date(s + 'T00:00:00')
@@ -339,16 +346,16 @@ export async function generateInvoice(
 
   params.lineItems.forEach((item, i) => {
     const cells = (tableRows[i + 1].tableCells as AnyObj[])
-    const body  = item.description ? `${item.title}\n${item.description}` : item.title
+    const body  = item.description ? `${item.title}\n\n${item.description}` : item.title
     fills.push({ startIndex: cellFirstParaStart(cells[0]), text: body })
     fills.push({ startIndex: cellFirstParaStart(cells[1]), text: String(item.quantity) })
-    fills.push({ startIndex: cellFirstParaStart(cells[2]), text: fmtSGD(item.amount * item.quantity) })
+    fills.push({ startIndex: cellFirstParaStart(cells[2]), text: fmtNum(item.amount * item.quantity) })
   })
 
   totals.forEach((row, i) => {
     const cells = (tableRows[params.lineItems.length + i + 1].tableCells as AnyObj[])
     fills.push({ startIndex: cellFirstParaStart(cells[0]), text: row.label })
-    fills.push({ startIndex: cellFirstParaStart(cells[1]), text: fmtSGD(row.amount) })
+    fills.push({ startIndex: cellFirstParaStart(cells[2]), text: fmtNum(row.amount) })
   })
 
   fills.sort((a, b) => b.startIndex - a.startIndex)
@@ -376,14 +383,14 @@ export async function generateInvoice(
       },
     })
 
-    // Description paragraph → italic (only if present)
-    if (item.description && cell0.content[1]) {
-      const descPara  = cell0.content[1].paragraph
+    // Description paragraph → plain (content[2] because content[1] is the blank spacer paragraph)
+    if (item.description && cell0.content[2]) {
+      const descPara  = cell0.content[2].paragraph
       const descStart = descPara.elements[0].startIndex as number
       styleReqs.push({
         updateTextStyle: {
           range: { startIndex: descStart, endIndex: descStart + item.description.length },
-          textStyle: { bold: false, italic: true },
+          textStyle: { bold: false, italic: false },
           fields: 'bold,italic',
         },
       })
@@ -394,8 +401,8 @@ export async function generateInvoice(
     if (!row.bold) return
     const cells  = (styledRows[params.lineItems.length + i + 1].tableCells as AnyObj[])
     const label0 = cellFirstParaStart(cells[0])
-    const amt1   = cellFirstParaStart(cells[1])
-    const amtStr = fmtSGD(row.amount)
+    const amt2   = cellFirstParaStart(cells[2])
+    const amtStr = fmtNum(row.amount)
     styleReqs.push({
       updateTextStyle: {
         range: { startIndex: label0, endIndex: label0 + row.label.length },
@@ -405,7 +412,7 @@ export async function generateInvoice(
     })
     styleReqs.push({
       updateTextStyle: {
-        range: { startIndex: amt1, endIndex: amt1 + amtStr.length },
+        range: { startIndex: amt2, endIndex: amt2 + amtStr.length },
         textStyle: { bold: true },
         fields: 'bold',
       },
