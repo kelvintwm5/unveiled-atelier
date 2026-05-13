@@ -316,6 +316,27 @@ export async function generateInvoice(
   const tableEl = findTable(docForTable)
   const tableStartIndex = tableEl.startIndex as number
 
+  // 4b. Bold the label portion of date lines ("PWS Date: " / "Wedding Date: "), leave the date plain
+  const dateLabelReqs: unknown[] = []
+  for (const el of docForTable.body.content as AnyObj[]) {
+    if (!el.paragraph) continue
+    const text = (el.paragraph.elements as AnyObj[]).map(e => e.textRun?.content ?? '').join('')
+    const labels: [string, number][] = [['PWS Date: ', 10], ['Wedding Date: ', 14]]
+    for (const [prefix, len] of labels) {
+      if (text.startsWith(prefix)) {
+        const start = el.paragraph.elements[0].startIndex as number
+        dateLabelReqs.push({
+          updateTextStyle: {
+            range: { startIndex: start, endIndex: start + len },
+            textStyle: { bold: true },
+            fields: 'bold',
+          },
+        })
+      }
+    }
+  }
+  if (dateLabelReqs.length > 0) await docsBatch(docId, token, dateLabelReqs)
+
   // 5. Compute amounts
   const subtotal   = calcSubtotal(params.lineItems)
   const totals     = buildTotalsRows(params.templateType, params.invoiceType, subtotal)
