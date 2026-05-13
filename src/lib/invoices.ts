@@ -406,7 +406,7 @@ export async function generateInvoice(
     const cells = (styledRows[i + 1].tableCells as AnyObj[])
     const cell0 = cells[0]
 
-    // Title paragraph → bold
+    // Title paragraph → bold; add space below when a description follows
     const titlePara  = cell0.content[0].paragraph
     const titleStart = titlePara.elements[0].startIndex as number
     styleReqs.push({
@@ -416,27 +416,36 @@ export async function generateInvoice(
         fields: 'bold,italic',
       },
     })
+    if (item.description) {
+      styleReqs.push({
+        updateParagraphStyle: {
+          range: { startIndex: titleStart, endIndex: titleStart + 1 },
+          paragraphStyle: { spaceBelow: { magnitude: 6, unit: 'PT' } },
+          fields: 'spaceBelow',
+        },
+      })
+    }
 
-    // Description paragraph → plain
+    // Description paragraph → Inter, plain
     if (item.description && cell0.content[1]) {
       const descPara  = cell0.content[1].paragraph
       const descStart = descPara.elements[0].startIndex as number
       styleReqs.push({
         updateTextStyle: {
           range: { startIndex: descStart, endIndex: descStart + item.description.length },
-          textStyle: { bold: false, italic: false },
-          fields: 'bold,italic',
+          textStyle: { bold: false, italic: false, weightedFontFamily: { fontFamily: 'Inter', weight: 400 } },
+          fields: 'bold,italic,weightedFontFamily',
         },
       })
     }
 
-    // Quantity and amount → not bold
+    // Quantity and amount → Inter, not bold
     const qtyStart = cellFirstParaStart(cells[1])
     styleReqs.push({
       updateTextStyle: {
         range: { startIndex: qtyStart, endIndex: qtyStart + String(item.quantity).length },
-        textStyle: { bold: false },
-        fields: 'bold',
+        textStyle: { bold: false, weightedFontFamily: { fontFamily: 'Inter', weight: 400 } },
+        fields: 'bold,weightedFontFamily',
       },
     })
     const lineAmtStr = fmtNum(item.amount * item.quantity)
@@ -444,13 +453,13 @@ export async function generateInvoice(
     styleReqs.push({
       updateTextStyle: {
         range: { startIndex: lineAmtStart, endIndex: lineAmtStart + lineAmtStr.length },
-        textStyle: { bold: false },
-        fields: 'bold',
+        textStyle: { bold: false, weightedFontFamily: { fontFamily: 'Inter', weight: 400 } },
+        fields: 'bold,weightedFontFamily',
       },
     })
   })
 
-  // Totals: bold only the Amount Payable Now row; all others plain
+  // Totals: bold only the Amount Payable Now row; amounts use Inter font
   totals.forEach((row, i) => {
     const cells  = (styledRows[params.lineItems.length + i + 1].tableCells as AnyObj[])
     const label0 = cellFirstParaStart(cells[0])
@@ -466,8 +475,8 @@ export async function generateInvoice(
     styleReqs.push({
       updateTextStyle: {
         range: { startIndex: amt2, endIndex: amt2 + amtStr.length },
-        textStyle: { bold: row.bold },
-        fields: 'bold',
+        textStyle: { bold: row.bold, weightedFontFamily: { fontFamily: 'Inter', weight: 400 } },
+        fields: 'bold,weightedFontFamily',
       },
     })
   })
