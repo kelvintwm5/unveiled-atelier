@@ -190,15 +190,26 @@ async function logInvoice(token: string, row: {
   amount: number; docUrl: string; lineItems: LineItem[]
 }) {
   await ensureInvoicesSheet(token)
-  await apiPost(
-    `https://sheets.googleapis.com/v4/spreadsheets/${REAL_SHEET_ID}/values/Invoices!A1:append?valueInputOption=RAW&insertDataOption=INSERT_ROWS`,
+  const colA = await apiGet(
+    `https://sheets.googleapis.com/v4/spreadsheets/${REAL_SHEET_ID}/values/Invoices!A:A`,
     token,
-    { values: [[
-      row.invoiceNo, row.date, row.clientName, row.clientEmail, row.clientContact,
-      row.templateType === 'rental' ? 'Rental' : 'Bespoke',
-      row.invoiceType === 'deposit' ? '1st — Deposit' : '2nd — Final Payment',
-      row.amount, row.docUrl, JSON.stringify(row.lineItems),
-    ]] },
+  )
+  const nextRow = ((colA.values ?? []) as string[][]).length + 1
+  await apiPost(
+    `https://sheets.googleapis.com/v4/spreadsheets/${REAL_SHEET_ID}/values:batchUpdate`,
+    token,
+    {
+      valueInputOption: 'RAW',
+      data: [{
+        range: `Invoices!A${nextRow}:J${nextRow}`,
+        values: [[
+          row.invoiceNo, row.date, row.clientName, row.clientEmail, row.clientContact,
+          row.templateType === 'rental' ? 'Rental' : 'Bespoke',
+          row.invoiceType === 'deposit' ? '1st — Deposit' : '2nd — Final Payment',
+          row.amount, row.docUrl, JSON.stringify(row.lineItems),
+        ]],
+      }],
+    },
   )
 }
 
