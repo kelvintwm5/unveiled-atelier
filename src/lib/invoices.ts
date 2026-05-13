@@ -157,10 +157,19 @@ export async function getNextInvoiceNumber(token: string): Promise<string> {
 
 async function ensureInvoicesSheet(token: string) {
   try {
-    await apiGet(
-      `https://sheets.googleapis.com/v4/spreadsheets/${REAL_SHEET_ID}/values/Invoices!A1`,
+    const data = await apiGet(
+      `https://sheets.googleapis.com/v4/spreadsheets/${REAL_SHEET_ID}/values/Invoices!A1:J1`,
       token,
     )
+    const header = ((data.values ?? [[]])[0] ?? []) as string[]
+    if (!header[9]) {
+      // Sheet exists but J1 header is missing — write it so the table extends to column J
+      await apiPost(
+        `https://sheets.googleapis.com/v4/spreadsheets/${REAL_SHEET_ID}/values:batchUpdate`,
+        token,
+        { valueInputOption: 'RAW', data: [{ range: 'Invoices!J1', values: [['Line Items']] }] },
+      )
+    }
   } catch {
     await apiPost(
       `https://sheets.googleapis.com/v4/spreadsheets/${REAL_SHEET_ID}:batchUpdate`,
