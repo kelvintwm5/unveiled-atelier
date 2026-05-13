@@ -421,7 +421,22 @@ export async function generateInvoice(
 
   await docsBatch(docId, token, styleReqs)
 
-  // 10. Log to Invoices sheet
+  // 10. Merge cells[0]+cells[1] for each totals row so the label spans Description+Quantity
+  await docsBatch(docId, token, totals.map((_, i) => ({
+    mergeTableCells: {
+      tableRange: {
+        tableCellLocation: {
+          tableStartLocation: { index: tableStartIndex },
+          rowIndex: params.lineItems.length + i + 1,
+          columnIndex: 0,
+        },
+        rowSpan: 1,
+        columnSpan: 2,
+      },
+    },
+  })))
+
+  // 11. Log to Invoices sheet
   await logInvoice(token, {
     invoiceNo, date: invoiceDate,
     clientName: params.clientName, clientEmail: params.clientEmail,
