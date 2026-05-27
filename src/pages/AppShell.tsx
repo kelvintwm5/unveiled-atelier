@@ -6,9 +6,15 @@ import TaxSummaryView from '../views/TaxSummaryView'
 import MonthlySummaryView from '../views/MonthlySummaryView'
 import InvoiceView from '../views/InvoiceView'
 import PricingView from '../views/PricingView'
+import ClientDashboardView from '../views/ClientDashboardView'
+import PipelineView from '../views/PipelineView'
+import ActivityView from '../views/ActivityView'
+import ClientChatView from '../views/ClientChatView'
 import type { AuthState } from '../types'
 
-export type View = 'transactions' | 'chat' | 'monthly' | 'tax' | 'invoices' | 'pricing'
+export type View =
+  | 'transactions' | 'chat' | 'monthly' | 'tax' | 'invoices' | 'pricing'
+  | 'client-dashboard' | 'pipeline' | 'activity' | 'client-chat'
 
 interface AppShellProps {
   auth: AuthState
@@ -76,6 +82,47 @@ const MOBILE_NAV: { id: View; label: string; icon: JSX.Element }[] = [
       </svg>
     ),
   },
+  // — divider between budget and client views —
+  {
+    id: 'client-dashboard',
+    label: 'C·Dash',
+    icon: (
+      <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5}
+          d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6" />
+      </svg>
+    ),
+  },
+  {
+    id: 'pipeline',
+    label: 'Pipeline',
+    icon: (
+      <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5}
+          d="M3 4a1 1 0 011-1h16a1 1 0 011 1v2.586a1 1 0 01-.293.707l-6.414 6.414a1 1 0 00-.293.707V17l-4 4v-6.586a1 1 0 00-.293-.707L3.293 7.293A1 1 0 013 6.586V4z" />
+      </svg>
+    ),
+  },
+  {
+    id: 'activity',
+    label: 'Activity',
+    icon: (
+      <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5}
+          d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
+      </svg>
+    ),
+  },
+  {
+    id: 'client-chat',
+    label: 'C·Chat',
+    icon: (
+      <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5}
+          d="M17 8h2a2 2 0 012 2v6a2 2 0 01-2 2h-2v4l-4-4H9a1.994 1.994 0 01-1.414-.586m0 0L11 14h4a2 2 0 002-2V6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2v4l.586-.586z" />
+      </svg>
+    ),
+  },
 ]
 
 export default function AppShell({ auth, onSignOut }: AppShellProps) {
@@ -133,40 +180,42 @@ export default function AppShell({ auth, onSignOut }: AppShellProps) {
         </div>
 
         <main className="flex-1 overflow-hidden min-h-0">
-          {activeView === 'transactions' && (
-            <TransactionsView mode={mode} accessToken={accessToken} />
-          )}
-          {activeView === 'chat' && <ChatView mode={mode} accessToken={accessToken} />}
-          {activeView === 'monthly' && (
-            <MonthlySummaryView mode={mode} accessToken={accessToken} />
-          )}
-          {activeView === 'tax' && (
-            <TaxSummaryView mode={mode} accessToken={accessToken} />
-          )}
-          {activeView === 'invoices' && (
-            <InvoiceView mode={mode} accessToken={accessToken} />
-          )}
-          {activeView === 'pricing' && <PricingView />}
+          {activeView === 'transactions'     && <TransactionsView mode={mode} accessToken={accessToken} />}
+          {activeView === 'chat'             && <ChatView mode={mode} accessToken={accessToken} />}
+          {activeView === 'monthly'          && <MonthlySummaryView mode={mode} accessToken={accessToken} />}
+          {activeView === 'tax'              && <TaxSummaryView mode={mode} accessToken={accessToken} />}
+          {activeView === 'invoices'         && <InvoiceView mode={mode} accessToken={accessToken} />}
+          {activeView === 'pricing'          && <PricingView />}
+          {activeView === 'client-dashboard' && <ClientDashboardView mode={mode} accessToken={accessToken} />}
+          {activeView === 'pipeline'         && <PipelineView mode={mode} accessToken={accessToken} />}
+          {activeView === 'activity'         && <ActivityView mode={mode} accessToken={accessToken} />}
+          {activeView === 'client-chat'      && <ClientChatView mode={mode} accessToken={accessToken} />}
         </main>
 
-        {/* Mobile bottom nav */}
+        {/* Mobile bottom nav — horizontally scrollable to fit all views */}
         <nav
-          className="md:hidden bg-stone-900 border-t border-stone-800 flex shrink-0"
-          style={{ paddingBottom: 'env(safe-area-inset-bottom)' }}
+          className="md:hidden bg-stone-900 border-t border-stone-800 flex overflow-x-auto shrink-0"
+          style={{
+            paddingBottom: 'env(safe-area-inset-bottom)',
+            scrollbarWidth: 'none',
+            msOverflowStyle: 'none',
+          } as React.CSSProperties}
         >
-          {MOBILE_NAV.map(item => {
+          {MOBILE_NAV.map((item, i) => {
             const isActive = item.id === activeView
+            const isSeparator = i === 6  // visual gap before client views
             return (
               <button
                 key={item.id}
                 onClick={() => setActiveView(item.id)}
                 className={[
-                  'flex-1 flex flex-col items-center gap-1 py-2.5 px-1 transition-colors',
+                  'flex flex-col items-center gap-1 py-2.5 px-3 shrink-0 transition-colors',
+                  isSeparator ? 'border-l border-stone-700 ml-1' : '',
                   isActive ? 'text-rose-300' : 'text-stone-500 hover:text-stone-300',
                 ].join(' ')}
               >
                 {item.icon}
-                <span className="text-xs leading-none">{item.label}</span>
+                <span className="text-xs leading-none whitespace-nowrap">{item.label}</span>
               </button>
             )
           })}

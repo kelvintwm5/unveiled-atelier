@@ -28,6 +28,31 @@ export interface MonthlySummary {
   profitMargin: number  // decimal: 0.25 = 25%
 }
 
+// ── Client tracker shapes ─────────────────────────────────────────────────────
+
+export type ClientStage = 'Inquiry' | 'Consultation' | 'Fitting' | 'Confirmed' | 'Completed' | 'Lost'
+export type VeilType = 'Rental' | 'Bespoke Veil' | 'Bespoke Rental' | 'TBD'
+export type ActivityType = 'Call' | 'WhatsApp' | 'Email' | 'In-Person' | 'Note'
+
+export interface Client {
+  name: string
+  email: string
+  phone: string
+  weddingDate: string    // YYYY-MM-DD
+  veilType: VeilType
+  budget: number         // SGD
+  stage: ClientStage
+  notes: string
+}
+
+export interface ClientActivity {
+  date: string           // YYYY-MM-DD
+  clientName: string
+  type: ActivityType
+  notes: string
+  nextFollowUp: string   // YYYY-MM-DD or ''
+}
+
 // ── Auth shapes ───────────────────────────────────────────────────────────────
 
 // The app is always in one of three states:

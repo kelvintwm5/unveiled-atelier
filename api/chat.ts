@@ -12,12 +12,21 @@ interface MonthlySummary {
   month: string; income: number; expenses: number; netProfit: number
 }
 
+interface ClientRecord {
+  name: string; email: string; phone: string; weddingDate: string
+  veilType: string; budget: number; stage: string; notes: string
+}
+
+interface ActivityRecord {
+  date: string; clientName: string; type: string; notes: string; nextFollowUp: string
+}
+
 interface ChatMessage {
   role: 'user' | 'assistant'
   content: string
 }
 
-function buildSystemPrompt(transactions: Transaction[], monthly: MonthlySummary[]): string {
+function buildFinanceSystemPrompt(transactions: Transaction[], monthly: MonthlySummary[]): string {
   const txLines = transactions.map(tx =>
     `${tx.date} | ${tx.type.padEnd(7)} | S$${String(tx.amount).padStart(6)} | ${tx.category} | ${tx.description}${tx.clientName ? ` (${tx.clientName})` : ''}`
   ).join('\n')
@@ -39,6 +48,30 @@ ${txLines || 'No transactions loaded.'}
 ${monthLines || 'No monthly data loaded.'}`
 }
 
+function buildClientSystemPrompt(clients: ClientRecord[], activities: ActivityRecord[]): string {
+  const clientLines = clients.map(c =>
+    `${c.name} | Stage: ${c.stage} | ${c.veilType} | Wedding: ${c.weddingDate || 'TBD'} | Budget: S$${c.budget}${c.notes ? ` | Notes: ${c.notes}` : ''}`
+  ).join('\n')
+
+  const activityLines = activities
+    .slice()
+    .sort((a, b) => b.date.localeCompare(a.date))
+    .slice(0, 30)
+    .map(a =>
+      `${a.date} | ${a.clientName} | ${a.type} | ${a.notes}${a.nextFollowUp ? ` → Follow up: ${a.nextFollowUp}` : ''}`
+    ).join('\n')
+
+  return `You are a client relationship assistant for Unveiled Atelier, a bridal boutique in Singapore. Help Esther manage her veil clients — tracking pipeline stages, planning follow-ups, and nurturing leads.
+
+Answer questions conversationally and keep responses concise. You can also draft WhatsApp or email messages when asked. Pipeline stages in order: Inquiry → Consultation → Fitting → Confirmed → Completed (or Lost).
+
+## Client Pipeline
+${clientLines || 'No clients loaded.'}
+
+## Activity Log (most recent first)
+${activityLines || 'No activity recorded.'}`
+}
+
 export default async function handler(req: VercelRequest, res: VercelResponse) {
   if (req.method !== 'POST') {
     return res.status(405).json({ error: 'Method not allowed' })
@@ -50,22 +83,29 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     })
   }
 
-  const { message, history, transactions, monthlySummary } = req.body as {
+  const { message, history, transactions, monthlySummary, chatMode, clients, activities } = req.body as {
     message: string
     history: ChatMessage[]
-    transactions: Transaction[]
-    monthlySummary: MonthlySummary[]
+    transactions?: Transaction[]
+    monthlySummary?: MonthlySummary[]
+    chatMode?: 'finance' | 'clients'
+    clients?: ClientRecord[]
+    activities?: ActivityRecord[]
   }
 
   if (!message?.trim()) {
     return res.status(400).json({ error: 'Message is required.' })
   }
 
+  const systemPrompt = chatMode === 'clients'
+    ? buildClientSystemPrompt(clients ?? [], activities ?? [])
+    : buildFinanceSystemPrompt(transactions ?? [], monthlySummary ?? [])
+
   try {
     const response = await client.messages.create({
       model: 'claude-sonnet-4-6',
       max_tokens: 1024,
-      system: buildSystemPrompt(transactions ?? [], monthlySummary ?? []),
+      system: systemPrompt,
       messages: [
         ...history.map(m => ({ role: m.role, content: m.content })),
         { role: 'user', content: message },
