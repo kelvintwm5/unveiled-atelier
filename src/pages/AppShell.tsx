@@ -1,4 +1,5 @@
 import { useState } from 'react'
+import { signInWithGoogle } from '../lib/supabase'
 import Sidebar from '../components/Sidebar'
 import TransactionsView from '../views/TransactionsView'
 import ChatView from '../views/ChatView'
@@ -17,7 +18,7 @@ export type View =
   | 'client-dashboard' | 'pipeline' | 'activity' | 'client-chat'
 
 interface AppShellProps {
-  auth: AuthState
+  auth: Extract<AuthState, { mode: 'demo' | 'app' }>
   onSignOut: () => void
 }
 
@@ -128,8 +129,10 @@ const MOBILE_NAV: { id: View; label: string; icon: JSX.Element }[] = [
 export default function AppShell({ auth, onSignOut }: AppShellProps) {
   const [activeView, setActiveView] = useState<View>('transactions')
 
-  const mode        = auth.mode as 'demo' | 'app'
-  const accessToken = auth.mode === 'app' ? auth.accessToken : undefined
+  const mode        = auth.mode
+  // The legacy Sheets/Docs views still call Google directly with this token.
+  const accessToken = auth.mode === 'app' ? auth.googleToken ?? undefined : undefined
+  const googleExpired = auth.mode === 'app' && !auth.googleToken
 
   return (
     <div className="flex h-[100dvh] bg-stone-50 overflow-hidden">
@@ -141,7 +144,7 @@ export default function AppShell({ auth, onSignOut }: AppShellProps) {
         onSignOut={onSignOut}
       />
 
-      <div className="flex-1 flex flex-col min-h-0">
+      <div className="flex-1 flex flex-col min-h-0 min-w-0">
 
         {/* Mobile top bar */}
         <div className="md:hidden bg-stone-900 px-4 py-3 flex items-center justify-between shrink-0">
@@ -178,6 +181,8 @@ export default function AppShell({ auth, onSignOut }: AppShellProps) {
             </button>
           </div>
         </div>
+
+        {googleExpired && <ReconnectGoogleBanner />}
 
         <main className="flex-1 overflow-hidden min-h-0">
           {activeView === 'transactions'     && <TransactionsView mode={mode} accessToken={accessToken} />}
@@ -223,6 +228,43 @@ export default function AppShell({ auth, onSignOut }: AppShellProps) {
 
       </div>
 
+    </div>
+  )
+}
+
+// Supabase passes Google's token through only once, at sign-in, and drops it on
+// the next session refresh (about an hour later, when it would expire anyway).
+// Reconnecting re-runs the Google redirect; with consent already given it's one tap.
+// Goes away once nothing reads Sheets, Docs or Drive.
+function ReconnectGoogleBanner() {
+  const [busy, setBusy] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+
+  async function reconnect() {
+    setBusy(true)
+    setError(null)
+    try {
+      await signInWithGoogle()
+    } catch (err) {
+      setBusy(false)
+      setError(err instanceof Error ? err.message : String(err))
+    }
+  }
+
+  return (
+    <div className="bg-rose-50 border-b border-rose-200 px-4 py-2.5 flex flex-wrap items-center gap-x-3 gap-y-2 shrink-0">
+      <p className="text-rose-900 text-sm flex-1 min-w-[12rem]">
+        Google access has expired. Sheets and invoices need a quick reconnect.
+        {error && <span className="block text-red-700 text-xs mt-1">{error}</span>}
+      </p>
+      <button
+        onClick={reconnect}
+        disabled={busy}
+        className="bg-rose-800 hover:bg-rose-900 text-white text-sm font-medium px-3 py-1.5 rounded-lg
+                   transition-colors disabled:opacity-60 disabled:cursor-not-allowed"
+      >
+        {busy ? 'Redirecting…' : 'Reconnect Google'}
+      </button>
     </div>
   )
 }

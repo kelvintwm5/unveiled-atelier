@@ -58,10 +58,12 @@ export interface ClientActivity {
 // The app is always in one of three states:
 //   landing   → showing the landing page, no data loaded
 //   demo      → visitor using sample data, no sign-in required
-//   app       → wife signed in with Google, reading real private sheet
+//   app       → owner signed in to Supabase with Google
 export type AuthMode = 'landing' | 'demo' | 'app'
 
+// googleToken is Google's access token for the legacy Sheets/Docs code, not the
+// Supabase session token. It is null once it has expired (see OwnerSession).
 export type AuthState =
   | { mode: 'landing' }
   | { mode: 'demo' }
-  | { mode: 'app'; accessToken: string }  // token lives in memory only, never persisted
+  | { mode: 'app'; email: string; googleToken: string | null }

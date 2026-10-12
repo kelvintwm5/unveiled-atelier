@@ -1,18 +1,11 @@
 import { useState } from 'react'
-import { useGoogleLogin } from '@react-oauth/google'
+import { signInWithGoogle } from '../lib/supabase'
 
 interface LandingPageProps {
   onDemo: () => void
-  onAuth: (accessToken: string) => void
+  // e.g. the user cancelled on Google's screen and was sent back here
+  initialError: string | null
 }
-
-// The Google sign-in button requests read-only access to the user's Google Sheets.
-// The access token returned is short-lived (1 hour) and stored only in memory.
-const SHEETS_SCOPE = [
-  'https://www.googleapis.com/auth/spreadsheets',
-  'https://www.googleapis.com/auth/drive',
-  'https://www.googleapis.com/auth/documents',
-].join(' ')
 
 const FEATURES = [
   {
@@ -43,28 +36,26 @@ const FEATURES = [
       </svg>
     ),
     title: 'Private by design',
-    body:  'Sign in with your own Google account. Data is never stored — it lives in memory only.',
+    body:  'Only the owner\'s Google account can see live data. Demo mode uses fictional data.',
   },
 ]
 
-export default function LandingPage({ onDemo, onAuth }: LandingPageProps) {
-  const [error, setError] = useState<string | null>(null)
+export default function LandingPage({ onDemo, initialError }: LandingPageProps) {
+  const [error, setError] = useState<string | null>(initialError)
   const [signingIn, setSigningIn] = useState(false)
 
-  // useGoogleLogin triggers a Google OAuth popup.
-  // flow: 'implicit' returns an access token directly (no backend needed).
-  // The token is scoped to read-only Sheets — the user can't accidentally write data.
-  const login = useGoogleLogin({
-    scope: SHEETS_SCOPE,
-    onSuccess: tokenResponse => {
+  // A full-page redirect to Google and back (not a popup). On success this page
+  // is gone before the promise settles; App picks up the session on return.
+  async function login() {
+    setError(null)
+    setSigningIn(true)
+    try {
+      await signInWithGoogle()
+    } catch (err) {
       setSigningIn(false)
-      onAuth(tokenResponse.access_token)
-    },
-    onError: () => {
-      setSigningIn(false)
-      setError('Sign-in failed or was cancelled. Please try again.')
-    },
-  })
+      setError(err instanceof Error ? err.message : String(err))
+    }
+  }
 
   return (
     <div className="min-h-screen bg-stone-950 flex flex-col items-center justify-center px-6">
@@ -104,7 +95,7 @@ export default function LandingPage({ onDemo, onAuth }: LandingPageProps) {
 
           {/* Primary — sign in with Google (for the wife's real data) */}
           <button
-            onClick={() => { setError(null); setSigningIn(true); login() }}
+            onClick={login}
             disabled={signingIn}
             className="w-full flex items-center justify-center gap-3 bg-white hover:bg-stone-100
                        text-stone-800 font-medium text-sm py-3 px-5 rounded-xl
@@ -117,7 +108,7 @@ export default function LandingPage({ onDemo, onAuth }: LandingPageProps) {
               <path fill="#FBBC05" d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z"/>
               <path fill="#EA4335" d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z"/>
             </svg>
-            {signingIn ? 'Opening Google…' : 'Owner Login'}
+            {signingIn ? 'Redirecting to Google…' : 'Owner Login'}
           </button>
 
           {/* Secondary — demo mode (no sign-in) */}
@@ -138,8 +129,8 @@ export default function LandingPage({ onDemo, onAuth }: LandingPageProps) {
 
         {/* Privacy note */}
         <p className="text-stone-600 text-xs text-center mt-8 leading-relaxed">
-          Signing in grants read-only access to Google Sheets.<br />
-          Your financial data is never stored or sent to any server.
+          Owner sign-in uses Google and grants this app access<br />
+          to the business's Google Sheets and invoice documents.
         </p>
 
       </div>
