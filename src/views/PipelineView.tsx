@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
-import { fetchClients, appendClient, updateClientStage } from '../lib/clientData'
-import type { Client, ClientStage, VeilType } from '../types'
+import { listClients, createClient, updateClientStage } from '../lib/clientData'
+import type { Client, ClientStage, NewClient, VeilType } from '../types'
 
 const STAGES: ClientStage[] = ['Inquiry', 'Consultation', 'Fitting', 'Confirmed', 'Completed', 'Lost']
 const VEIL_TYPES: VeilType[] = ['Rental', 'Bespoke Veil', 'Bespoke Rental', 'TBD']
@@ -29,17 +29,16 @@ const inputCls = [
   'placeholder:text-stone-300 bg-white',
 ].join(' ')
 
-const EMPTY_FORM: Omit<Client, 'budget'> & { budget: string } = {
+const EMPTY_FORM: Omit<NewClient, 'budget'> & { budget: string } = {
   name: '', email: '', phone: '', weddingDate: '',
   veilType: 'TBD', budget: '', stage: 'Inquiry', notes: '',
 }
 
 interface Props {
   mode: 'demo' | 'app'
-  accessToken?: string
 }
 
-export default function PipelineView({ mode, accessToken }: Props) {
+export default function PipelineView({ mode }: Props) {
   const [clients, setClients]       = useState<Client[]>([])
   const [loading, setLoading]       = useState(true)
   const [error, setError]           = useState('')
@@ -48,24 +47,28 @@ export default function PipelineView({ mode, accessToken }: Props) {
   const [form, setForm]             = useState(EMPTY_FORM)
   const [saving, setSaving]         = useState(false)
   const [saveError, setSaveError]   = useState('')
+  const [stageError, setStageError] = useState('')
 
   useEffect(() => {
     setLoading(true)
-    fetchClients(mode, accessToken)
+    setError('')
+    listClients(mode)
       .then(setClients)
-      .catch(e => setError(e.message))
+      .catch((e: unknown) => setError(e instanceof Error ? e.message : String(e)))
       .finally(() => setLoading(false))
-  }, [mode, accessToken])
+  }, [mode])
 
   const filtered = filter === ALL_FILTER ? clients : clients.filter(c => c.stage === filter)
 
-  async function handleStageChange(clientName: string, oldStage: ClientStage, newStage: ClientStage) {
-    setClients(prev => prev.map(c => c.name === clientName ? { ...c, stage: newStage } : c))
-    if (mode !== 'app' || !accessToken) return
+  // Optimistic: the card moves straight away and moves back if the save fails.
+  async function handleStageChange(clientId: string, oldStage: ClientStage, newStage: ClientStage) {
+    setStageError('')
+    setClients(prev => prev.map(c => c.id === clientId ? { ...c, stage: newStage } : c))
     try {
-      await updateClientStage(accessToken, clientName, newStage)
-    } catch {
-      setClients(prev => prev.map(c => c.name === clientName ? { ...c, stage: oldStage } : c))
+      await updateClientStage(mode, clientId, newStage)
+    } catch (e: unknown) {
+      setClients(prev => prev.map(c => c.id === clientId ? { ...c, stage: oldStage } : c))
+      setStageError(e instanceof Error ? e.message : 'Failed to change the stage.')
     }
   }
 
@@ -73,13 +76,13 @@ export default function PipelineView({ mode, accessToken }: Props) {
     if (!form.name.trim()) { setSaveError('Name is required.'); return }
     setSaving(true)
     setSaveError('')
-    const client: Client = {
+    const input: NewClient = {
       ...form,
       name:   form.name.trim(),
       budget: parseFloat(form.budget) || 0,
     }
     try {
-      if (mode === 'app' && accessToken) await appendClient(accessToken, client)
+      const client = await createClient(mode, input)
       setClients(prev => [...prev, client])
       setShowModal(false)
       setForm(EMPTY_FORM)
@@ -135,6 +138,7 @@ export default function PipelineView({ mode, accessToken }: Props) {
 
         {loading && <p className="text-stone-400 text-sm">Loading…</p>}
         {error && <p className="text-rose-600 text-sm">{error}</p>}
+        {stageError && <p className="text-rose-600 text-sm mb-4">{stageError}</p>}
 
         {/* Client cards */}
         {!loading && !error && (
@@ -146,9 +150,9 @@ export default function PipelineView({ mode, accessToken }: Props) {
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
               {filtered.map(client => (
                 <ClientCard
-                  key={client.name}
+                  key={client.id}
                   client={client}
-                  onStageChange={(newStage) => handleStageChange(client.name, client.stage, newStage)}
+                  onStageChange={(newStage) => handleStageChange(client.id, client.stage, newStage)}
                 />
               ))}
             </div>
@@ -170,7 +174,7 @@ export default function PipelineView({ mode, accessToken }: Props) {
                   onChange={e => setForm(f => ({ ...f, name: e.target.value }))}
                   placeholder="Rachel Tan" />
               </Field>
-              <div className="grid grid-cols-2 gap-4">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <Field label="Email">
                   <input className={inputCls} type="email" value={form.email}
                     onChange={e => setForm(f => ({ ...f, email: e.target.value }))}

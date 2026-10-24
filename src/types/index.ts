@@ -34,7 +34,10 @@ export type ClientStage = 'Inquiry' | 'Consultation' | 'Fitting' | 'Confirmed' |
 export type VeilType = 'Rental' | 'Bespoke Veil' | 'Bespoke Rental' | 'TBD'
 export type ActivityType = 'Call' | 'WhatsApp' | 'Email' | 'In-Person' | 'Note'
 
+// id is the database uuid. Records are linked by id, never by name: two
+// clients can share a name, and a name can be corrected later.
 export interface Client {
+  id: string
   name: string
   email: string
   phone: string
@@ -46,12 +49,17 @@ export interface Client {
 }
 
 export interface ClientActivity {
+  id: string
+  clientId: string       // Client.id
   date: string           // YYYY-MM-DD
-  clientName: string
   type: ActivityType
   notes: string
   nextFollowUp: string   // YYYY-MM-DD or ''
 }
+
+// What the add forms produce: the database assigns the id.
+export type NewClient = Omit<Client, 'id'>
+export type NewActivity = Omit<ClientActivity, 'id'>
 
 // ── Auth shapes ───────────────────────────────────────────────────────────────
 

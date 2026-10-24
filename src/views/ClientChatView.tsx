@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import ReactMarkdown from 'react-markdown'
-import { fetchClients, fetchActivities } from '../lib/clientData'
+import { listClients, listActivities } from '../lib/clientData'
 import { sendChatMessage } from '../lib/chat'
 import type { Client, ClientActivity } from '../types'
 
@@ -11,24 +11,26 @@ interface Message {
 
 interface Props {
   mode: 'demo' | 'app'
-  accessToken?: string
 }
 
-export default function ClientChatView({ mode, accessToken }: Props) {
+export default function ClientChatView({ mode }: Props) {
   const [messages, setMessages]       = useState<Message[]>([])
   const [input, setInput]             = useState('')
   const [sending, setSending]         = useState(false)
   const [loadingData, setLoadingData] = useState(true)
+  const [loadError, setLoadError]     = useState('')
   const [clients, setClients]         = useState<Client[]>([])
   const [activities, setActivities]   = useState<ClientActivity[]>([])
   const bottomRef = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
     setLoadingData(true)
-    Promise.all([fetchClients(mode, accessToken), fetchActivities(mode, accessToken)])
+    setLoadError('')
+    Promise.all([listClients(mode), listActivities(mode)])
       .then(([c, a]) => { setClients(c); setActivities(a) })
+      .catch((e: unknown) => setLoadError(e instanceof Error ? e.message : String(e)))
       .finally(() => setLoadingData(false))
-  }, [mode, accessToken])
+  }, [mode])
 
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: 'smooth' })
@@ -75,6 +77,8 @@ export default function ClientChatView({ mode, accessToken }: Props) {
             ? 'Loading client data…'
             : `Ask about your clients — ${clients.length} clients${mode === 'demo' ? ' (demo data)' : ''}`}
         </p>
+        {/* Without the data the answers would be about an empty pipeline, so chat stays off. */}
+        {loadError && <p className="text-rose-600 text-sm mt-1">{loadError}</p>}
       </div>
 
       <div className="flex-1 overflow-y-auto px-4 py-4 md:px-8 md:py-6 space-y-5">
@@ -121,7 +125,7 @@ export default function ClientChatView({ mode, accessToken }: Props) {
             onKeyDown={handleKeyDown}
             placeholder="Ask about your clients…"
             rows={1}
-            disabled={loadingData || sending}
+            disabled={loadingData || !!loadError || sending}
             className="flex-1 resize-none border border-stone-300 rounded-xl px-4 py-3
                        text-sm focus:outline-none focus:ring-2 focus:ring-rose-300
                        focus:border-transparent placeholder:text-stone-400
@@ -129,7 +133,7 @@ export default function ClientChatView({ mode, accessToken }: Props) {
           />
           <button
             onClick={send}
-            disabled={!input.trim() || sending || loadingData}
+            disabled={!input.trim() || sending || loadingData || !!loadError}
             className="px-5 py-3 bg-rose-800 text-white text-sm rounded-xl shrink-0
                        hover:bg-rose-700 transition-colors
                        disabled:opacity-40 disabled:cursor-not-allowed"

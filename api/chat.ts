@@ -4,6 +4,7 @@ import { createClient } from '@supabase/supabase-js'
 // The .js extension is required: this function runs as a Node ES module, which
 // doesn't guess extensions. TypeScript maps it to demoData.ts.
 import { DEMO_ACTIVITIES, DEMO_CLIENTS, DEMO_MONTHLY, DEMO_TRANSACTIONS } from '../src/lib/demoData.js'
+import { clientChatContext, type ChatActivity, type ChatClient } from '../src/lib/clientChatContext.js'
 
 const client = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY })
 
@@ -30,15 +31,12 @@ interface MonthlySummary {
   month: string; income: number; expenses: number; netProfit: number
 }
 
-// No email or phone: src/lib/chat.ts strips them before sending.
-interface ClientRecord {
-  name: string; weddingDate: string
-  veilType: string; budget: number; stage: string; notes: string
-}
+// No email, phone or ids, and activities name their client: both the browser
+// (live data) and the demo branch below shape them with clientChatContext().
+type ClientRecord = ChatClient
+type ActivityRecord = ChatActivity
 
-interface ActivityRecord {
-  date: string; clientName: string; type: string; notes: string; nextFollowUp: string
-}
+const DEMO_CLIENT_CONTEXT = clientChatContext(DEMO_CLIENTS, DEMO_ACTIVITIES)
 
 interface ChatMessage {
   role: 'user' | 'assistant'
@@ -176,7 +174,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   const systemPrompt = chatMode === 'clients'
     ? isOwner
       ? buildClientSystemPrompt(arrayOf<ClientRecord>(body.clients), arrayOf<ActivityRecord>(body.activities))
-      : buildClientSystemPrompt(DEMO_CLIENTS, DEMO_ACTIVITIES)
+      : buildClientSystemPrompt(DEMO_CLIENT_CONTEXT.clients, DEMO_CLIENT_CONTEXT.activities)
     : isOwner
       ? buildFinanceSystemPrompt(arrayOf<Transaction>(body.transactions), arrayOf<MonthlySummary>(body.monthlySummary))
       : buildFinanceSystemPrompt(DEMO_TRANSACTIONS, DEMO_MONTHLY)

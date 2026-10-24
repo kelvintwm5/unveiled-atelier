@@ -3,6 +3,7 @@
 //   app  → sends the Supabase access token, which the server checks before calling Claude
 
 import { getAccessToken } from './supabase'
+import { clientChatContext } from './clientChatContext'
 import type { Client, ClientActivity, MonthlySummary, Transaction } from '../types'
 
 export interface ChatTurn {
@@ -13,13 +14,6 @@ export interface ChatTurn {
 export type ChatContext =
   | { chatMode: 'finance'; transactions: Transaction[]; monthlySummary: MonthlySummary[] }
   | { chatMode: 'clients'; clients: Client[]; activities: ClientActivity[] }
-
-// Whatever is sent here leaves our infrastructure for Anthropic's, so email and
-// phone are dropped: no question about the pipeline needs them.
-function clientContext(clients: Client[]) {
-  return clients.map(({ name, weddingDate, veilType, budget, stage, notes }) =>
-    ({ name, weddingDate, veilType, budget, stage, notes }))
-}
 
 /** Sends one message and returns Claude's reply. Throws an Error a user can read. */
 export async function sendChatMessage(
@@ -36,7 +30,7 @@ export async function sendChatMessage(
     if (!token) throw new Error('Your session has expired. Sign out and sign in again.')
     headers.Authorization = `Bearer ${token}`
     body = context.chatMode === 'clients'
-      ? { ...body, clients: clientContext(context.clients), activities: context.activities }
+      ? { ...body, ...clientChatContext(context.clients, context.activities) }
       : { ...body, transactions: context.transactions, monthlySummary: context.monthlySummary }
   }
 

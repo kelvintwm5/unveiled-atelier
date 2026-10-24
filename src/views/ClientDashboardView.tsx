@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
-import { fetchClients, fetchActivities } from '../lib/clientData'
+import { listClients, listActivities, clientLabels } from '../lib/clientData'
+import { addDays, todaySgt } from '../lib/dates'
 import type { Client, ClientActivity, ClientStage } from '../types'
 
 const STAGE_ORDER: ClientStage[] = ['Inquiry', 'Consultation', 'Fitting', 'Confirmed', 'Completed', 'Lost']
@@ -23,10 +24,9 @@ const TYPE_COLORS: Record<string, string> = {
 
 interface Props {
   mode: 'demo' | 'app'
-  accessToken?: string
 }
 
-export default function ClientDashboardView({ mode, accessToken }: Props) {
+export default function ClientDashboardView({ mode }: Props) {
   const [clients, setClients]     = useState<Client[]>([])
   const [activities, setActivities] = useState<ClientActivity[]>([])
   const [loading, setLoading]     = useState(true)
@@ -34,11 +34,12 @@ export default function ClientDashboardView({ mode, accessToken }: Props) {
 
   useEffect(() => {
     setLoading(true)
-    Promise.all([fetchClients(mode, accessToken), fetchActivities(mode, accessToken)])
+    setError('')
+    Promise.all([listClients(mode), listActivities(mode)])
       .then(([c, a]) => { setClients(c); setActivities(a) })
-      .catch(e => setError(e.message))
+      .catch((e: unknown) => setError(e instanceof Error ? e.message : String(e)))
       .finally(() => setLoading(false))
-  }, [mode, accessToken])
+  }, [mode])
 
   if (loading) return (
     <div className="h-full flex items-center justify-center">
@@ -52,21 +53,22 @@ export default function ClientDashboardView({ mode, accessToken }: Props) {
         <p className="text-rose-600 font-medium mb-1">Could not load client data</p>
         <p className="text-stone-400 text-sm">{error}</p>
         <p className="text-stone-400 text-xs mt-3">
-          Make sure "Clients" and "Activity" tabs exist in your Google Sheet.
+          Check your connection and reload the page.
         </p>
       </div>
     </div>
   )
 
-  const today = new Date().toISOString().split('T')[0]
-  const in30  = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString().split('T')[0]
+  const today = todaySgt()
+  const in30  = addDays(today, 30)
+  const labels = clientLabels(clients)
 
   const active   = clients.filter(c => c.stage !== 'Completed' && c.stage !== 'Lost')
   const upcoming = clients.filter(c => c.weddingDate >= today && c.weddingDate <= in30)
 
   const needsFollowUp = active.filter(c => {
     const latest = activities
-      .filter(a => a.clientName === c.name)
+      .filter(a => a.clientId === c.id)
       .sort((a, b) => b.date.localeCompare(a.date))[0]
     return latest?.nextFollowUp && latest.nextFollowUp <= today
   })
@@ -134,12 +136,12 @@ export default function ClientDashboardView({ mode, accessToken }: Props) {
             <p className="text-stone-400 text-sm">No activity logged yet.</p>
           ) : (
             <div className="space-y-4">
-              {recentActivities.map((a, i) => (
-                <div key={i} className="flex gap-4 items-start">
-                  <p className="text-xs text-stone-400 w-20 shrink-0 pt-0.5">{a.date}</p>
+              {recentActivities.map(a => (
+                <div key={a.id} className="flex gap-3 sm:gap-4 items-start">
+                  <p className="text-xs text-stone-400 w-[4.5rem] sm:w-20 shrink-0 pt-0.5">{a.date}</p>
                   <div className="flex-1 min-w-0">
-                    <div className="flex items-center gap-2 mb-0.5">
-                      <span className="text-sm font-medium text-stone-800">{a.clientName}</span>
+                    <div className="flex items-center gap-2 mb-0.5 flex-wrap">
+                      <span className="text-sm font-medium text-stone-800">{labels.get(a.clientId) ?? 'Unknown client'}</span>
                       <span className={`text-xs px-1.5 py-0.5 rounded font-medium ${TYPE_COLORS[a.type] ?? 'bg-stone-100 text-stone-500'}`}>
                         {a.type}
                       </span>
