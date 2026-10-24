@@ -17,11 +17,6 @@ export type View =
   | 'transactions' | 'chat' | 'monthly' | 'tax' | 'invoices' | 'pricing'
   | 'client-dashboard' | 'pipeline' | 'activity' | 'client-chat'
 
-// The client tracker reads Clients/Activity tabs that don't exist in the real
-// Sheet, so in live mode it only shows errors. Hidden there (demo keeps it) until
-// it moves to Supabase. Delete this, and the check in Sidebar, at that point.
-const CLIENT_VIEWS: View[] = ['client-dashboard', 'pipeline', 'activity', 'client-chat']
-
 interface AppShellProps {
   auth: Extract<AuthState, { mode: 'demo' | 'app' }>
   onSignOut: () => void
@@ -212,7 +207,7 @@ export default function AppShell({ auth, onSignOut }: AppShellProps) {
             msOverflowStyle: 'none',
           } as React.CSSProperties}
         >
-          {MOBILE_NAV.filter(item => mode === 'demo' || !CLIENT_VIEWS.includes(item.id)).map((item, i) => {
+          {MOBILE_NAV.map((item, i) => {
             const isActive = item.id === activeView
             const isSeparator = i === 6  // visual gap before client views
             return (
