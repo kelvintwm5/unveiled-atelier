@@ -166,16 +166,12 @@ export default function Sidebar({ activeView, onNavigate, mode, onSignOut }: Sid
           ))}
         </div>
 
-        {mode === 'demo' && (
-          <>
-            <SectionLabel className="mt-5">Clients</SectionLabel>
-            <div className="space-y-1 mt-1">
-              {CLIENT_NAV.map(item => (
-                <NavButton key={item.id} item={item} active={activeView === item.id} onNavigate={onNavigate} />
-              ))}
-            </div>
-          </>
-        )}
+        <SectionLabel className="mt-5">Clients</SectionLabel>
+        <div className="space-y-1 mt-1">
+          {CLIENT_NAV.map(item => (
+            <NavButton key={item.id} item={item} active={activeView === item.id} onNavigate={onNavigate} />
+          ))}
+        </div>
       </nav>
 
       {/* Footer */}
