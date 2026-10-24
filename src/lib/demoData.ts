@@ -2,7 +2,7 @@
 // This is the same dataset that was written to the Google Sheet by create_sheet.py,
 // kept here so portfolio visitors can explore the full UI without signing in.
 
-import type { Transaction, IrasSummary, MonthlySummary } from '../types'
+import type { Transaction, IrasSummary, MonthlySummary, Client, ClientActivity } from '../types'
 
 export const DEMO_TRANSACTIONS: Transaction[] = [
   { date:'2025-01-08', type:'Income',  description:'Bridal gown package – Sarah Lim',    category:'Gown Sales',             amount:3800, paymentMethod:'PayNow',        clientName:'Sarah Lim',         receiptNo:'REC-001', notes:'Full payment' },
@@ -46,3 +46,127 @@ export const DEMO_IRAS: IrasSummary = {
   expenses:        2_215,   // sum of all Expense rows
   adjustedProfit: 11_515,   // revenue - expenses
 }
+
+// ── Client tracker ────────────────────────────────────────────────────────────
+
+export const DEMO_CLIENTS: Client[] = [
+  {
+    name: 'Rachel Tan',
+    email: 'rachel.tan@gmail.com',
+    phone: '+65 9123 4567',
+    weddingDate: '2025-04-12',
+    veilType: 'Bespoke Veil',
+    budget: 450,
+    stage: 'Fitting',
+    notes: 'Cathedral length, French lace trim. 2nd fitting done, minor adjustments pending.',
+  },
+  {
+    name: 'Priya Nair',
+    email: 'priya.n@hotmail.com',
+    phone: '+65 8234 5678',
+    weddingDate: '2025-06-07',
+    veilType: 'Rental',
+    budget: 180,
+    stage: 'Consultation',
+    notes: 'Traditional Indian-Chinese wedding. Likes the pearl edge rental.',
+  },
+  {
+    name: 'Amanda Goh',
+    email: 'amanda.goh@outlook.com',
+    phone: '+65 9345 6789',
+    weddingDate: '2025-03-22',
+    veilType: 'Bespoke Veil',
+    budget: 600,
+    stage: 'Confirmed',
+    notes: 'Elbow length, silk organza. Deposit paid. Pickup 8 March.',
+  },
+  {
+    name: 'Jessica Lim',
+    email: 'jess.lim@gmail.com',
+    phone: '+65 8456 7890',
+    weddingDate: '2025-07-19',
+    veilType: 'Rental',
+    budget: 150,
+    stage: 'Inquiry',
+    notes: 'Contacted via Instagram. Interested in floor-length options.',
+  },
+  {
+    name: 'Sarah Wong',
+    email: 'sarah.wong@yahoo.com',
+    phone: '+65 9567 8901',
+    weddingDate: '2024-12-14',
+    veilType: 'Bespoke Veil',
+    budget: 520,
+    stage: 'Completed',
+    notes: 'Fingertip length, applique flowers. Delivered and very happy.',
+  },
+  {
+    name: 'Mei Ling Chen',
+    email: 'meiling.chen@gmail.com',
+    phone: '+65 8678 9012',
+    weddingDate: '2025-08-30',
+    veilType: 'Bespoke Rental',
+    budget: 300,
+    stage: 'Inquiry',
+    notes: 'Enquired about custom-made rental concept. Pricing TBD.',
+  },
+]
+
+export const DEMO_ACTIVITIES: ClientActivity[] = [
+  {
+    date: '2025-01-15',
+    clientName: 'Rachel Tan',
+    type: 'In-Person',
+    notes: 'Second fitting done. Minor adjustment to the lace trim needed. Ready by end of Jan.',
+    nextFollowUp: '2025-01-29',
+  },
+  {
+    date: '2025-01-10',
+    clientName: 'Priya Nair',
+    type: 'WhatsApp',
+    notes: 'Sent photos of pearl edge rental options. She liked the fingertip length.',
+    nextFollowUp: '2025-01-17',
+  },
+  {
+    date: '2025-01-08',
+    clientName: 'Amanda Goh',
+    type: 'Call',
+    notes: 'Confirmed pickup date — 8 March. Deposit received via PayNow.',
+    nextFollowUp: '',
+  },
+  {
+    date: '2025-01-05',
+    clientName: 'Jessica Lim',
+    type: 'Email',
+    notes: 'Replied to Instagram DM with pricing brochure and available rental dates.',
+    nextFollowUp: '2025-01-12',
+  },
+  {
+    date: '2025-01-03',
+    clientName: 'Rachel Tan',
+    type: 'Call',
+    notes: 'Called to schedule 2nd fitting. She is available 15 Jan.',
+    nextFollowUp: '2025-01-15',
+  },
+  {
+    date: '2024-12-20',
+    clientName: 'Sarah Wong',
+    type: 'In-Person',
+    notes: 'Final handover. Client loved the result. Left a 5-star Google review.',
+    nextFollowUp: '',
+  },
+  {
+    date: '2024-12-10',
+    clientName: 'Mei Ling Chen',
+    type: 'WhatsApp',
+    notes: 'Initial inquiry about bespoke rental concept. Explained pricing model.',
+    nextFollowUp: '2025-01-15',
+  },
+  {
+    date: '2024-12-05',
+    clientName: 'Priya Nair',
+    type: 'In-Person',
+    notes: 'First consultation. Showed rental samples. Budget is S$150–200.',
+    nextFollowUp: '2025-01-10',
+  },
+]

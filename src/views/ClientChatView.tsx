@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import ReactMarkdown from 'react-markdown'
 import { fetchClients, fetchActivities } from '../lib/clientData'
+import { sendChatMessage } from '../lib/chat'
 import type { Client, ClientActivity } from '../types'
 
 interface Message {
@@ -43,32 +44,14 @@ export default function ClientChatView({ mode, accessToken }: Props) {
     setSending(true)
 
     try {
-      const res = await fetch('/api/chat', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          message: text,
-          history: messages,
-          chatMode: 'clients',
-          clients,
-          activities,
-        }),
+      const reply = await sendChatMessage(mode, text, messages, {
+        chatMode: 'clients', clients, activities,
       })
-
-      const data = await res.json()
-
-      if (!res.ok) {
-        setMessages(prev => [...prev, {
-          role: 'assistant',
-          content: `⚠️ ${data.error ?? 'Something went wrong. Please try again.'}`,
-        }])
-      } else {
-        setMessages(prev => [...prev, { role: 'assistant', content: data.reply }])
-      }
-    } catch {
+      setMessages(prev => [...prev, { role: 'assistant', content: reply }])
+    } catch (err) {
       setMessages(prev => [...prev, {
         role: 'assistant',
-        content: '⚠️ Could not reach the server. Check your connection and try again.',
+        content: `⚠️ ${err instanceof Error ? err.message : String(err)}`,
       }])
     } finally {
       setSending(false)

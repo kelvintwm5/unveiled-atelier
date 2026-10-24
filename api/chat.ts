@@ -1,7 +1,25 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node'
 import Anthropic from '@anthropic-ai/sdk'
+import { createClient } from '@supabase/supabase-js'
+// The .js extension is required: this function runs as a Node ES module, which
+// doesn't guess extensions. TypeScript maps it to demoData.ts.
+import { DEMO_ACTIVITIES, DEMO_CLIENTS, DEMO_MONTHLY, DEMO_TRANSACTIONS } from '../src/lib/demoData.js'
 
 const client = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY })
+
+const MODEL = 'claude-sonnet-4-6'
+
+// Demo visitors aren't signed in, so these caps are what bounds the cost of a
+// demo request, whoever sends it. Owners get more room.
+const LIMITS = {
+  demo:  { messageChars: 500, historyTurns: 10, turnChars: 2000, maxTokens: 512 },
+  owner: { messageChars: 4000, historyTurns: 20, turnChars: 8000, maxTokens: 1024 },
+}
+
+// The same values the browser uses. Both are public by design; what protects the
+// data is RLS, which sees the caller's own JWT below. No service_role key needed.
+const SUPABASE_URL = process.env.VITE_SUPABASE_URL
+const SUPABASE_ANON_KEY = process.env.VITE_SUPABASE_ANON_KEY
 
 interface Transaction {
   date: string; type: string; description: string; category: string
@@ -12,8 +30,9 @@ interface MonthlySummary {
   month: string; income: number; expenses: number; netProfit: number
 }
 
+// No email or phone: src/lib/chat.ts strips them before sending.
 interface ClientRecord {
-  name: string; email: string; phone: string; weddingDate: string
+  name: string; weddingDate: string
   veilType: string; budget: number; stage: string; notes: string
 }
 
@@ -72,6 +91,50 @@ ${clientLines || 'No clients loaded.'}
 ${activityLines || 'No activity recorded.'}`
 }
 
+function bearerToken(header: string | undefined): string | null {
+  const match = header?.match(/^Bearer (.+)$/)
+  return match ? match[1] : null
+}
+
+/**
+ * Asks Supabase, as the caller, whether they're in app_owners. PostgREST verifies
+ * the JWT's signature and expiry before running is_app_owner(), so a forged or
+ * stale token fails here with a 401. Returns null when the caller is an owner.
+ */
+async function checkOwner(token: string): Promise<{ status: number; error: string } | null> {
+  if (!SUPABASE_URL || !SUPABASE_ANON_KEY) {
+    return { status: 503, error: 'Chat is not configured — add the Supabase URL and anon key to the Vercel environment variables.' }
+  }
+  const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
+    global: { headers: { Authorization: `Bearer ${token}` } },
+    auth: { persistSession: false, autoRefreshToken: false, detectSessionInUrl: false },
+  })
+  const { data, error, status } = await supabase.rpc('is_app_owner')
+  if (status === 401) return { status: 401, error: 'Your session has expired. Sign out and sign in again.' }
+  if (error) return { status: 502, error: `Couldn't check your access: ${error.message}` }
+  if (data !== true) return { status: 403, error: "This account isn't set up as an owner of Unveiled Atelier." }
+  return null
+}
+
+/** Keeps only well-formed turns, the most recent `maxTurns`, starting on a user turn. */
+function parseHistory(value: unknown, maxTurns: number): ChatMessage[] {
+  if (!Array.isArray(value)) return []
+  const turns = value.filter((m): m is ChatMessage =>
+    m !== null && typeof m === 'object'
+    && (m.role === 'user' || m.role === 'assistant')
+    && typeof m.content === 'string')
+  const recent = turns.slice(-maxTurns).map(m => ({ role: m.role, content: m.content }))
+  // Claude expects the conversation to open with the user.
+  while (recent.length > 0 && recent[0].role !== 'user') recent.shift()
+  return recent
+}
+
+// Owner context comes from our own signed-in browser and only shapes the prompt,
+// so a shape check is enough.
+function arrayOf<T>(value: unknown): T[] {
+  return Array.isArray(value) ? value as T[] : []
+}
+
 export default async function handler(req: VercelRequest, res: VercelResponse) {
   if (req.method !== 'POST') {
     return res.status(405).json({ error: 'Method not allowed' })
@@ -83,33 +146,47 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     })
   }
 
-  const { message, history, transactions, monthlySummary, chatMode, clients, activities } = req.body as {
-    message: string
-    history: ChatMessage[]
-    transactions?: Transaction[]
-    monthlySummary?: MonthlySummary[]
-    chatMode?: 'finance' | 'clients'
-    clients?: ClientRecord[]
-    activities?: ActivityRecord[]
-  }
+  // Everything below trusts nothing about the body until it has been checked.
+  const body: Record<string, unknown> = req.body && typeof req.body === 'object' ? req.body : {}
 
-  if (!message?.trim()) {
+  // A request with a token claims to be the owner and must prove it. One without
+  // is a demo visitor and gets demo data and demo limits, whatever it sends.
+  const token = bearerToken(req.headers.authorization)
+  const isOwner = token !== null
+  if (isOwner) {
+    const denied = await checkOwner(token)
+    if (denied) return res.status(denied.status).json({ error: denied.error })
+  }
+  const limits = isOwner ? LIMITS.owner : LIMITS.demo
+
+  const message = typeof body.message === 'string' ? body.message.trim() : ''
+  if (!message) {
     return res.status(400).json({ error: 'Message is required.' })
   }
+  if (message.length > limits.messageChars) {
+    return res.status(400).json({ error: `Please keep messages under ${limits.messageChars} characters.` })
+  }
 
+  const history = parseHistory(body.history, limits.historyTurns)
+  if (history.some(m => m.content.length > limits.turnChars)) {
+    return res.status(400).json({ error: 'The conversation is too long. Reload the page to start a new one.' })
+  }
+
+  const chatMode = body.chatMode === 'clients' ? 'clients' : 'finance'
   const systemPrompt = chatMode === 'clients'
-    ? buildClientSystemPrompt(clients ?? [], activities ?? [])
-    : buildFinanceSystemPrompt(transactions ?? [], monthlySummary ?? [])
+    ? isOwner
+      ? buildClientSystemPrompt(arrayOf<ClientRecord>(body.clients), arrayOf<ActivityRecord>(body.activities))
+      : buildClientSystemPrompt(DEMO_CLIENTS, DEMO_ACTIVITIES)
+    : isOwner
+      ? buildFinanceSystemPrompt(arrayOf<Transaction>(body.transactions), arrayOf<MonthlySummary>(body.monthlySummary))
+      : buildFinanceSystemPrompt(DEMO_TRANSACTIONS, DEMO_MONTHLY)
 
   try {
     const response = await client.messages.create({
-      model: 'claude-sonnet-4-6',
-      max_tokens: 1024,
+      model: MODEL,
+      max_tokens: limits.maxTokens,
       system: systemPrompt,
-      messages: [
-        ...history.map(m => ({ role: m.role, content: m.content })),
-        { role: 'user', content: message },
-      ],
+      messages: [...history, { role: 'user', content: message }],
     })
 
     const reply = response.content[0].type === 'text' ? response.content[0].text : ''
