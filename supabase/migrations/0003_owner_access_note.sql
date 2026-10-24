@@ -1,0 +1,12 @@
+-- Granting owner access. Intentionally changes nothing.
+--
+-- This replaces the TODO at the end of 0002. The repo is public on GitHub, so
+-- owner emails other than the developer's are kept out of it. Grant access by
+-- running this once in the Supabase SQL editor (not as a migration):
+--
+--   insert into app_owners (email, note)
+--   values (lower('<her gmail address>'), 'owner')
+--   on conflict do nothing;
+--
+-- Google returns emails in lowercase, and is_app_owner() compares exactly, hence lower().
+-- Revoke access with: delete from app_owners where email = lower('<address>');

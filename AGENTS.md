@@ -101,8 +101,10 @@ npm run build    # tsc + vite build
    are either disabled or local to the session. Demo mode never touches Supabase.
 4. **Access control is RLS, not UI.** Every table gets `enable row level security`
    plus policies, normally `using (is_app_owner()) with check (is_app_owner())`.
-   To grant access, insert into `app_owners`. Don't hardcode emails in policies. A
-   disabled button is a convenience, not a security control.
+   To grant access, insert into `app_owners` from the Supabase SQL editor. The repo
+   is public, so owner emails stay out of migrations (see `0003_owner_access_note.sql`).
+   Don't hardcode emails in policies. A disabled button is a convenience, not a
+   security control.
 5. **Secrets stay server-side.** Anything prefixed `VITE_` ships to every browser.
    The Supabase anon key is public by design. The `service_role` key and
    `ANTHROPIC_API_KEY` belong only in `api/` (Vercel env vars), never in `VITE_` vars.
@@ -167,8 +169,10 @@ npm run build    # tsc + vite build
 - Only server-side, in `api/`. The browser calls `/api/chat`.
 - Keep the model id in one constant.
 - The endpoint must verify the caller (Supabase JWT plus the owner check) before it
-  spends tokens. Demo mode needs its own cheap guard, such as a rate limit or capped
-  history. *(Known gap: `api/chat.ts` currently has no auth.)*
+  spends tokens. `api/chat.ts` does this by calling `is_app_owner()` as the caller.
+  A request without a token is a demo request: the server uses its own demo
+  fixtures, ignores data in the body, and caps message, history and reply size.
+  There's no rate limit yet. Add one if demo traffic gets costly.
 - Context sent to the model leaves our infrastructure. Send only what the question
   needs, and leave out client emails and phone numbers unless the task requires them.
 - Treat business data in prompts as data, not instructions.
