@@ -1,69 +1,50 @@
-import { useEffect, useMemo, useState } from 'react'
-import type { Transaction, MonthlySummary } from '../types'
-import { fetchTransactions, formatSGD } from '../lib/sheets'
-
-const MONTH_NAMES = [
-  'January', 'February', 'March', 'April', 'May', 'June',
-  'July', 'August', 'September', 'October', 'November', 'December',
-]
-
-function computeMonthly(transactions: Transaction[], year: string): MonthlySummary[] {
-  return MONTH_NAMES.map((month, idx) => {
-    const monthStr = String(idx + 1).padStart(2, '0')
-    const prefix = `${year}-${monthStr}`
-    const txs = transactions.filter(tx => tx.date.startsWith(prefix))
-    const income   = txs.filter(tx => tx.type === 'Income').reduce((s, tx) => s + tx.amount, 0)
-    const expenses = txs.filter(tx => tx.type === 'Expense').reduce((s, tx) => s + tx.amount, 0)
-    const netProfit = income - expenses
-    return {
-      month,
-      income,
-      expenses,
-      netProfit,
-      profitMargin: income > 0 ? netProfit / income : 0,
-    }
-  })
-}
+import { useEffect, useState } from 'react'
+import type { MonthlyPnl } from '../types'
+import { defaultYear, getMonthlyPnl, listTransactionYears } from '../lib/transactions'
+import { formatSGD } from '../lib/money'
 
 interface MonthlySummaryViewProps {
   mode: 'demo' | 'app'
-  accessToken?: string
 }
 
-export default function MonthlySummaryView({ mode, accessToken }: MonthlySummaryViewProps) {
-  const [transactions, setTransactions] = useState<Transaction[]>([])
+export default function MonthlySummaryView({ mode }: MonthlySummaryViewProps) {
+  const [years, setYears]     = useState<number[]>([])
+  const [selectedYear, setSelectedYear] = useState<number | null>(null)
+  const [pnl, setPnl]         = useState<MonthlyPnl | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError]     = useState<string | null>(null)
-  const [selectedYear, setSelectedYear] = useState<string>('')
 
+  // Open on the most recent year with data (or this year, before there is any).
   useEffect(() => {
     setLoading(true)
     setError(null)
-    fetchTransactions(mode, accessToken)
-      .then(txs => {
-        setTransactions(txs)
-        // Default to the most recent year present in the data
-        const years = [...new Set(txs.map(tx => tx.date.slice(0, 4)).filter(Boolean))].sort()
-        setSelectedYear(years[years.length - 1] ?? String(new Date().getFullYear()))
+    listTransactionYears(mode)
+      .then(ys => {
+        const year = defaultYear(ys)
+        setYears(ys.includes(year) ? ys : [year, ...ys])
+        setSelectedYear(year)
       })
-      .catch(err => setError(err.message))
-      .finally(() => setLoading(false))
-  }, [mode, accessToken])
+      .catch(err => { setError(err.message); setLoading(false) })
+  }, [mode])
 
-  const years = useMemo(() => {
-    return [...new Set(transactions.map(tx => tx.date.slice(0, 4)).filter(Boolean))].sort()
-  }, [transactions])
+  // Every figure on this screen, totals included, is summed by the database.
+  useEffect(() => {
+    if (selectedYear === null) return
+    let current = true
+    setLoading(true)
+    setError(null)
+    getMonthlyPnl(mode, selectedYear)
+      .then(result => { if (current) setPnl(result) })
+      .catch(err => { if (current) setError(err.message) })
+      .finally(() => { if (current) setLoading(false) })
+    return () => { current = false }
+  }, [mode, selectedYear])
 
-  const rows = useMemo(
-    () => selectedYear ? computeMonthly(transactions, selectedYear) : [],
-    [transactions, selectedYear]
-  )
-
-  const activeRows    = rows.filter(r => r.income > 0 || r.expenses > 0)
-  const totalIncome   = rows.reduce((s, r) => s + r.income, 0)
-  const totalExpenses = rows.reduce((s, r) => s + r.expenses, 0)
-  const totalNet      = totalIncome - totalExpenses
-  const maxAbsNet     = Math.max(...activeRows.map(r => Math.abs(r.netProfit)), 1)
+  const rows       = pnl?.months ?? []
+  const total      = pnl?.total
+  const activeRows = rows.filter(r => r.income > 0 || r.expenses > 0)
+  // Only scales the bar heights; no money is computed here.
+  const maxAbsNet  = Math.max(...activeRows.map(r => Math.abs(r.netProfit)), 1)
 
   if (loading) {
     return (
@@ -73,12 +54,12 @@ export default function MonthlySummaryView({ mode, accessToken }: MonthlySummary
     )
   }
 
-  if (error) {
+  if (error || !total) {
     return (
       <div className="h-full flex items-center justify-center">
         <div className="text-center space-y-2">
           <p className="text-red-400 font-medium">Failed to load data</p>
-          <p className="text-stone-500 text-sm">{error}</p>
+          <p className="text-stone-500 text-sm">{error ?? 'No data'}</p>
         </div>
       </div>
     )
@@ -97,8 +78,8 @@ export default function MonthlySummaryView({ mode, accessToken }: MonthlySummary
         </div>
         {years.length > 0 && (
           <select
-            value={selectedYear}
-            onChange={e => setSelectedYear(e.target.value)}
+            value={selectedYear ?? ''}
+            onChange={e => setSelectedYear(Number(e.target.value))}
             className="text-sm border border-stone-200 rounded-lg px-3 py-1.5 bg-white
                        text-stone-700 focus:outline-none focus:ring-2 focus:ring-rose-300"
           >
@@ -111,13 +92,13 @@ export default function MonthlySummaryView({ mode, accessToken }: MonthlySummary
 
       {/* KPI strip */}
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 md:gap-4 mb-6 md:mb-8">
-        <KpiCard label="Total Income" value={formatSGD(totalIncome)} positive />
-        <KpiCard label="Total Expenses" value={formatSGD(totalExpenses)} />
+        <KpiCard label="Total Income" value={formatSGD(total.income)} positive />
+        <KpiCard label="Total Expenses" value={formatSGD(total.expenses)} />
         <KpiCard
           label="Net Profit"
-          value={formatSGD(totalNet)}
-          positive={totalNet >= 0}
-          negative={totalNet < 0}
+          value={formatSGD(total.netProfit)}
+          positive={total.netProfit >= 0}
+          negative={total.netProfit < 0}
         />
       </div>
 
@@ -197,18 +178,16 @@ export default function MonthlySummaryView({ mode, accessToken }: MonthlySummary
           <tfoot>
             <tr className="border-t-2 border-stone-200 bg-stone-50 font-semibold">
               <td className="px-5 py-3 text-stone-700">Total</td>
-              <td className="px-5 py-3 text-right text-stone-700">{formatSGD(totalIncome)}</td>
-              <td className="px-5 py-3 text-right text-stone-700">{formatSGD(totalExpenses)}</td>
+              <td className="px-5 py-3 text-right text-stone-700">{formatSGD(total.income)}</td>
+              <td className="px-5 py-3 text-right text-stone-700">{formatSGD(total.expenses)}</td>
               <td className={[
                 'px-5 py-3 text-right',
-                totalNet < 0 ? 'text-red-500' : 'text-emerald-600',
+                total.netProfit < 0 ? 'text-red-500' : 'text-emerald-600',
               ].join(' ')}>
-                {formatSGD(totalNet)}
+                {formatSGD(total.netProfit)}
               </td>
               <td className="px-5 py-3 text-right text-stone-500">
-                {totalIncome > 0
-                  ? `${((totalNet / totalIncome) * 100).toFixed(1)}%`
-                  : '—'}
+                {total.income > 0 ? `${(total.profitMargin * 100).toFixed(1)}%` : '—'}
               </td>
             </tr>
           </tfoot>

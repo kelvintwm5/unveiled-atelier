@@ -34,8 +34,8 @@ export function getSupabase(): SupabaseClient {
 
 const isConfigured = Boolean(SUPABASE_URL && SUPABASE_ANON_KEY)
 
-// Scopes for the Google APIs the legacy code still calls directly (Sheets for
-// transactions and clients, Drive + Docs for invoice generation). Supabase hands
+// Scopes for the Google APIs the legacy invoice code still calls directly (Sheets
+// for invoice numbering and the invoice log, Drive + Docs for generation). Supabase hands
 // this token back once, as session.provider_token. Remove these scopes when the
 // last Sheets/Docs/Drive code is gone.
 export const GOOGLE_API_SCOPES = [

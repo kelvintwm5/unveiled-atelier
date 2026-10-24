@@ -1,17 +1,24 @@
 // ── Data shapes ───────────────────────────────────────────────────────────────
 
+// id is the database uuid. amount is always positive: type says which way the
+// money moved. Text fields the database stores as null arrive here as ''.
 export interface Transaction {
-  date: string
+  id: string
+  date: string             // YYYY-MM-DD, a Singapore calendar date
   type: 'Income' | 'Expense'
   description: string
   category: string
-  amount: number           // raw SGD number e.g. 3800
+  amount: number           // SGD, e.g. 3800
   paymentMethod: string
-  clientName: string
-  receiptNo: string
+  clientName: string       // as it was on the day; also used for people not in the tracker
+  clientId: string         // Client.id, or '' when not linked to a tracked client
+  referenceNo: string      // receipt or invoice number
   notes: string
 }
 
+export type NewTransaction = Omit<Transaction, 'id'>
+
+// The four lines of the IRAS Form B/B1 statement for one calendar year.
 export interface IrasSummary {
   revenue: number
   grossProfit: number
@@ -19,13 +26,23 @@ export interface IrasSummary {
   adjustedProfit: number
 }
 
-// One row from the Monthly Summary tab
-export interface MonthlySummary {
-  month: string
+export interface PnlTotals {
   income: number
   expenses: number
   netProfit: number
-  profitMargin: number  // decimal: 0.25 = 25%
+  profitMargin: number  // decimal: 0.25 = 25%; 0 when there is no income
+}
+
+// One month of one year
+export interface MonthlySummary extends PnlTotals {
+  month: string         // 'January'
+}
+
+// A calendar year, every figure summed by the database
+export interface MonthlyPnl {
+  year: number
+  months: MonthlySummary[]   // always 12, January first
+  total: PnlTotals
 }
 
 // ── Client tracker shapes ─────────────────────────────────────────────────────

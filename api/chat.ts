@@ -3,8 +3,13 @@ import Anthropic from '@anthropic-ai/sdk'
 import { createClient } from '@supabase/supabase-js'
 // The .js extension is required: this function runs as a Node ES module, which
 // doesn't guess extensions. TypeScript maps it to demoData.ts.
-import { DEMO_ACTIVITIES, DEMO_CLIENTS, DEMO_MONTHLY, DEMO_TRANSACTIONS } from '../src/lib/demoData.js'
+import {
+  DEMO_ACTIVITIES, DEMO_CLIENTS, DEMO_MONTHLY, DEMO_PNL_TOTAL, DEMO_PNL_YEAR, DEMO_TRANSACTIONS,
+} from '../src/lib/demoData.js'
 import { clientChatContext, type ChatActivity, type ChatClient } from '../src/lib/clientChatContext.js'
+import {
+  financeChatContext, type ChatMonth, type ChatTransaction, type ChatYear,
+} from '../src/lib/financeChatContext.js'
 
 const client = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY })
 
@@ -22,14 +27,11 @@ const LIMITS = {
 const SUPABASE_URL = process.env.VITE_SUPABASE_URL
 const SUPABASE_ANON_KEY = process.env.VITE_SUPABASE_ANON_KEY
 
-interface Transaction {
-  date: string; type: string; description: string; category: string
-  amount: number; paymentMethod: string; clientName: string
-}
-
-interface MonthlySummary {
-  month: string; income: number; expenses: number; netProfit: number
-}
+// Only what a question about the numbers needs; both the browser (live data) and
+// the demo branch below shape it with financeChatContext().
+const DEMO_FINANCE_CONTEXT = financeChatContext(DEMO_TRANSACTIONS, [
+  { year: DEMO_PNL_YEAR, months: DEMO_MONTHLY, total: DEMO_PNL_TOTAL },
+])
 
 // No email, phone or ids, and activities name their client: both the browser
 // (live data) and the demo branch below shape them with clientChatContext().
@@ -43,26 +45,31 @@ interface ChatMessage {
   content: string
 }
 
-function buildFinanceSystemPrompt(transactions: Transaction[], monthly: MonthlySummary[]): string {
+function buildFinanceSystemPrompt(transactions: ChatTransaction[], monthly: ChatMonth[], years: ChatYear[]): string {
   const txLines = transactions.map(tx =>
     `${tx.date} | ${tx.type.padEnd(7)} | S$${String(tx.amount).padStart(6)} | ${tx.category} | ${tx.description}${tx.clientName ? ` (${tx.clientName})` : ''}`
   ).join('\n')
 
-  const monthLines = monthly
-    .filter(m => m.income > 0 || m.expenses > 0)
-    .map(m =>
-      `${m.month.padEnd(10)} | Income S$${m.income.toLocaleString().padStart(6)} | Expenses S$${m.expenses.toLocaleString().padStart(6)} | Net S$${m.netProfit.toLocaleString()}`
-    ).join('\n')
+  const monthLines = monthly.map(m =>
+    `${m.month.padEnd(14)} | Income S$${m.income.toLocaleString().padStart(6)} | Expenses S$${m.expenses.toLocaleString().padStart(6)} | Net S$${m.netProfit.toLocaleString()}`
+  ).join('\n')
+
+  const yearLines = years.map(y =>
+    `${y.year} | Income S$${y.income.toLocaleString()} | Expenses S$${y.expenses.toLocaleString()} | Net S$${y.netProfit.toLocaleString()}`
+  ).join('\n')
 
   return `You are a friendly financial assistant for Unveiled Atelier, a bridal boutique in Singapore run by a sole proprietor who files taxes with IRAS.
 
-Answer questions about the business finances clearly and conversationally. Use Singapore dollar formatting (S$). Keep responses concise — a few sentences unless a detailed breakdown is needed. If asked something outside the financial data provided, say so honestly.
+Answer questions about the business finances clearly and conversationally. Use Singapore dollar formatting (S$). Keep responses concise — a few sentences unless a detailed breakdown is needed. If asked something outside the financial data provided, say so honestly. The monthly and yearly totals below are exact; quote them rather than adding up transactions yourself.
 
 ## Transactions
 ${txLines || 'No transactions loaded.'}
 
-## Monthly Summary
-${monthLines || 'No monthly data loaded.'}`
+## Monthly Summary (months with activity)
+${monthLines || 'No monthly data loaded.'}
+
+## Yearly Totals
+${yearLines || 'No yearly data loaded.'}`
 }
 
 function buildClientSystemPrompt(clients: ClientRecord[], activities: ActivityRecord[]): string {
@@ -176,8 +183,10 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       ? buildClientSystemPrompt(arrayOf<ClientRecord>(body.clients), arrayOf<ActivityRecord>(body.activities))
       : buildClientSystemPrompt(DEMO_CLIENT_CONTEXT.clients, DEMO_CLIENT_CONTEXT.activities)
     : isOwner
-      ? buildFinanceSystemPrompt(arrayOf<Transaction>(body.transactions), arrayOf<MonthlySummary>(body.monthlySummary))
-      : buildFinanceSystemPrompt(DEMO_TRANSACTIONS, DEMO_MONTHLY)
+      ? buildFinanceSystemPrompt(
+          arrayOf<ChatTransaction>(body.transactions), arrayOf<ChatMonth>(body.months), arrayOf<ChatYear>(body.years))
+      : buildFinanceSystemPrompt(
+          DEMO_FINANCE_CONTEXT.transactions, DEMO_FINANCE_CONTEXT.months, DEMO_FINANCE_CONTEXT.years)
 
   try {
     const response = await client.messages.create({

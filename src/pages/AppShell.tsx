@@ -130,8 +130,8 @@ export default function AppShell({ auth, onSignOut }: AppShellProps) {
   const [activeView, setActiveView] = useState<View>('transactions')
 
   const mode        = auth.mode
-  // The legacy Sheets/Docs views still call Google directly with this token.
-  // The client views don't need it: they read Supabase with the Supabase session.
+  // Only the legacy invoice view still calls Google (Sheets, Docs, Drive) with
+  // this token. Everything else reads Supabase with the Supabase session.
   const accessToken = auth.mode === 'app' ? auth.googleToken ?? undefined : undefined
   const googleExpired = auth.mode === 'app' && !auth.googleToken
 
@@ -186,10 +186,10 @@ export default function AppShell({ auth, onSignOut }: AppShellProps) {
         {googleExpired && <ReconnectGoogleBanner />}
 
         <main className="flex-1 overflow-hidden min-h-0">
-          {activeView === 'transactions'     && <TransactionsView mode={mode} accessToken={accessToken} />}
-          {activeView === 'chat'             && <ChatView mode={mode} accessToken={accessToken} />}
-          {activeView === 'monthly'          && <MonthlySummaryView mode={mode} accessToken={accessToken} />}
-          {activeView === 'tax'              && <TaxSummaryView mode={mode} accessToken={accessToken} />}
+          {activeView === 'transactions'     && <TransactionsView mode={mode} />}
+          {activeView === 'chat'             && <ChatView mode={mode} />}
+          {activeView === 'monthly'          && <MonthlySummaryView mode={mode} />}
+          {activeView === 'tax'              && <TaxSummaryView mode={mode} />}
           {activeView === 'invoices'         && <InvoiceView mode={mode} accessToken={accessToken} />}
           {activeView === 'pricing'          && <PricingView />}
           {activeView === 'client-dashboard' && <ClientDashboardView mode={mode} />}
@@ -236,7 +236,7 @@ export default function AppShell({ auth, onSignOut }: AppShellProps) {
 // Supabase passes Google's token through only once, at sign-in, and drops it on
 // the next session refresh (about an hour later, when it would expire anyway).
 // Reconnecting re-runs the Google redirect; with consent already given it's one tap.
-// Goes away once nothing reads Sheets, Docs or Drive.
+// Goes away with the Google invoice code.
 function ReconnectGoogleBanner() {
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -255,7 +255,7 @@ function ReconnectGoogleBanner() {
   return (
     <div className="bg-rose-50 border-b border-rose-200 px-4 py-2.5 flex flex-wrap items-center gap-x-3 gap-y-2 shrink-0">
       <p className="text-rose-900 text-sm flex-1 min-w-[12rem]">
-        Google access has expired. Sheets and invoices need a quick reconnect.
+        Google access has expired. Invoices need a quick reconnect.
         {error && <span className="block text-red-700 text-xs mt-1">{error}</span>}
       </p>
       <button
