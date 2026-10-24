@@ -4,7 +4,8 @@
 
 import { getAccessToken } from './supabase'
 import { clientChatContext } from './clientChatContext'
-import type { Client, ClientActivity, MonthlySummary, Transaction } from '../types'
+import { financeChatContext } from './financeChatContext'
+import type { Client, ClientActivity, MonthlyPnl, Transaction } from '../types'
 
 export interface ChatTurn {
   role: 'user' | 'assistant'
@@ -12,7 +13,7 @@ export interface ChatTurn {
 }
 
 export type ChatContext =
-  | { chatMode: 'finance'; transactions: Transaction[]; monthlySummary: MonthlySummary[] }
+  | { chatMode: 'finance'; transactions: Transaction[]; years: MonthlyPnl[] }
   | { chatMode: 'clients'; clients: Client[]; activities: ClientActivity[] }
 
 /** Sends one message and returns Claude's reply. Throws an Error a user can read. */
@@ -31,7 +32,7 @@ export async function sendChatMessage(
     headers.Authorization = `Bearer ${token}`
     body = context.chatMode === 'clients'
       ? { ...body, ...clientChatContext(context.clients, context.activities) }
-      : { ...body, transactions: context.transactions, monthlySummary: context.monthlySummary }
+      : { ...body, ...financeChatContext(context.transactions, context.years) }
   }
 
   let res: Response

@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
-import { fetchIrasSummary, formatSGD } from '../lib/sheets'
+import { defaultYear, getIrasSummary, listTransactionYears } from '../lib/transactions'
+import { formatSGD } from '../lib/money'
 import type { IrasSummary } from '../types'
 
 const IRAS_LINES = [
@@ -35,22 +36,40 @@ const IRAS_LINES = [
 
 interface Props {
   mode: 'demo' | 'app'
-  accessToken?: string
 }
 
-export default function TaxSummaryView({ mode, accessToken }: Props) {
+export default function TaxSummaryView({ mode }: Props) {
+  const [years, setYears]     = useState<number[]>([])
+  const [year, setYear]       = useState<number | null>(null)
   const [data, setData]       = useState<IrasSummary | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError]     = useState<string | null>(null)
 
+  // Open on the most recent year with data (or this year, before there is any).
   useEffect(() => {
     setLoading(true)
     setError(null)
-    fetchIrasSummary(mode, accessToken)
-      .then(setData)
-      .catch(e => setError(e.message))
-      .finally(() => setLoading(false))
-  }, [mode, accessToken])
+    listTransactionYears(mode)
+      .then(ys => {
+        const y = defaultYear(ys)
+        setYears(ys.includes(y) ? ys : [y, ...ys])
+        setYear(y)
+      })
+      .catch(e => { setError(e.message); setLoading(false) })
+  }, [mode])
+
+  useEffect(() => {
+    if (year === null) return
+    let current = true
+    setLoading(true)
+    setError(null)
+    setData(null)
+    getIrasSummary(mode, year)
+      .then(result => { if (current) setData(result) })
+      .catch(e => { if (current) setError(e.message) })
+      .finally(() => { if (current) setLoading(false) })
+    return () => { current = false }
+  }, [mode, year])
 
   return (
     <div className="h-full flex flex-col">
@@ -66,9 +85,25 @@ export default function TaxSummaryView({ mode, accessToken }: Props) {
 
       <div className="flex-1 overflow-y-auto px-4 py-4 md:px-8 md:py-6">
 
-        <div className="flex items-center gap-3 mb-6">
-          <span className="text-sm text-stone-600">Year of Assessment</span>
-          <span className="bg-stone-800 text-white text-sm font-semibold px-3 py-1 rounded-full">2025</span>
+        {/* Sole proprietors are taxed on the preceding year's income: what was
+            earned in 2025 is filed for Year of Assessment 2026. */}
+        <div className="flex flex-wrap items-center gap-x-3 gap-y-2 mb-6">
+          <label htmlFor="tax-year" className="text-sm text-stone-600">Income year</label>
+          <select
+            id="tax-year"
+            value={year ?? ''}
+            onChange={e => setYear(Number(e.target.value))}
+            disabled={years.length === 0}
+            className="text-sm border border-stone-200 rounded-lg px-3 py-1.5 bg-white
+                       text-stone-700 focus:outline-none focus:ring-2 focus:ring-rose-300"
+          >
+            {years.map(y => <option key={y} value={y}>{y}</option>)}
+          </select>
+          {year !== null && (
+            <span className="bg-stone-800 text-white text-sm font-semibold px-3 py-1 rounded-full">
+              YA {year + 1}
+            </span>
+          )}
         </div>
 
         {!loading && error && (
@@ -100,7 +135,7 @@ export default function TaxSummaryView({ mode, accessToken }: Props) {
                       <p className="text-2xl font-bold text-stone-300">—</p>
                     )}
                     <p className="text-xs text-stone-400 mt-0.5">
-                      {loading ? 'Loading…' : mode === 'demo' ? 'Sample data' : 'From Google Sheets'}
+                      {loading ? 'Loading…' : mode === 'demo' ? 'Sample data' : `Jan–Dec ${year}`}
                     </p>
                   </div>
                 </div>
@@ -110,9 +145,10 @@ export default function TaxSummaryView({ mode, accessToken }: Props) {
         </div>
 
         <p className="text-xs text-stone-400 mt-6 max-w-2xl">
-          {mode === 'demo'
-            ? 'These figures are pre-computed sample data. Connect your Google Sheet to see real numbers.'
-            : 'Figures are computed by your Google Sheet and refreshed each session.'}
+          Line 1 counts every income transaction in the year and line 3 every expense; nothing
+          is treated as cost of sales or as non-deductible. A reporting aid to prepare your
+          Form B/B1, not tax advice.
+          {mode === 'demo' && ' These are sample figures. Sign in to see your own.'}
         </p>
 
       </div>

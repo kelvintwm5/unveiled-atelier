@@ -1,8 +1,8 @@
 import { useEffect, useRef, useState } from 'react'
 import ReactMarkdown from 'react-markdown'
-import { fetchTransactions, fetchMonthlySummary } from '../lib/sheets'
+import { getMonthlyPnl, listTransactions, listTransactionYears } from '../lib/transactions'
 import { sendChatMessage } from '../lib/chat'
-import type { Transaction, MonthlySummary } from '../types'
+import type { MonthlyPnl, Transaction } from '../types'
 
 interface Message {
   role: 'user' | 'assistant'
@@ -11,29 +11,34 @@ interface Message {
 
 interface Props {
   mode: 'demo' | 'app'
-  accessToken?: string
 }
 
-export default function ChatView({ mode, accessToken }: Props) {
+export default function ChatView({ mode }: Props) {
   const [messages, setMessages]     = useState<Message[]>([])
   const [input, setInput]           = useState('')
   const [sending, setSending]       = useState(false)
   const [loadingData, setLoadingData] = useState(true)
-  const [transactions, setTransactions]     = useState<Transaction[]>([])
-  const [monthlySummary, setMonthlySummary] = useState<MonthlySummary[]>([])
+  const [loadError, setLoadError]   = useState<string | null>(null)
+  const [transactions, setTransactions] = useState<Transaction[]>([])
+  const [years, setYears]           = useState<MonthlyPnl[]>([])
   const bottomRef = useRef<HTMLDivElement>(null)
 
-  // Load financial data once so it can be passed to Claude as context
+  // Load financial data once so it can be passed to Claude as context: every
+  // transaction, plus the database's monthly totals for each year that has any.
+  // If it fails, say so; asking Claude about an empty ledger would get confident
+  // answers about zero.
   useEffect(() => {
     setLoadingData(true)
+    setLoadError(null)
     Promise.all([
-      fetchTransactions(mode, accessToken),
-      fetchMonthlySummary(mode, accessToken),
-    ]).then(([txs, monthly]) => {
+      listTransactions(mode),
+      listTransactionYears(mode).then(ys => Promise.all(ys.map(y => getMonthlyPnl(mode, y)))),
+    ]).then(([txs, pnls]) => {
       setTransactions(txs)
-      setMonthlySummary(monthly)
-    }).finally(() => setLoadingData(false))
-  }, [mode, accessToken])
+      setYears(pnls)
+    }).catch(err => setLoadError(err instanceof Error ? err.message : String(err)))
+      .finally(() => setLoadingData(false))
+  }, [mode])
 
   // Keep the latest message in view
   useEffect(() => {
@@ -51,7 +56,7 @@ export default function ChatView({ mode, accessToken }: Props) {
 
     try {
       const reply = await sendChatMessage(mode, text, messages, {
-        chatMode: 'finance', transactions, monthlySummary,
+        chatMode: 'finance', transactions, years,
       })
       setMessages(prev => [...prev, { role: 'assistant', content: reply }])
     } catch (err) {
@@ -80,7 +85,9 @@ export default function ChatView({ mode, accessToken }: Props) {
         <p className="text-stone-400 text-sm mt-0.5">
           {loadingData
             ? 'Loading your financial data…'
-            : `Ask questions about your finances — ${mode === 'demo' ? 'demo data loaded' : 'live data loaded'}`}
+            : loadError
+              ? <span className="text-red-500">Couldn't load your financial data: {loadError}</span>
+              : `Ask questions about your finances — ${mode === 'demo' ? 'demo data loaded' : 'live data loaded'}`}
         </p>
       </div>
 
@@ -132,7 +139,7 @@ export default function ChatView({ mode, accessToken }: Props) {
             onKeyDown={handleKeyDown}
             placeholder="Ask something about your business…"
             rows={1}
-            disabled={loadingData || sending}
+            disabled={loadingData || sending || loadError !== null}
             className="flex-1 resize-none border border-stone-300 rounded-xl px-4 py-3
                        text-sm focus:outline-none focus:ring-2 focus:ring-rose-300
                        focus:border-transparent placeholder:text-stone-400
@@ -140,7 +147,7 @@ export default function ChatView({ mode, accessToken }: Props) {
           />
           <button
             onClick={send}
-            disabled={!input.trim() || sending || loadingData}
+            disabled={!input.trim() || sending || loadingData || loadError !== null}
             className="px-5 py-3 bg-rose-800 text-white text-sm rounded-xl shrink-0
                        hover:bg-rose-700 transition-colors
                        disabled:opacity-40 disabled:cursor-not-allowed"

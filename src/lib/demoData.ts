@@ -2,27 +2,32 @@
 // This is the same dataset that was written to the Google Sheet by create_sheet.py,
 // kept here so portfolio visitors can explore the full UI without signing in.
 
-import type { Transaction, IrasSummary, MonthlySummary, Client, ClientActivity } from '../types'
+import type { Transaction, IrasSummary, MonthlySummary, PnlTotals, Client, ClientActivity } from '../types'
 
+// Fixed ids, so React keys stay stable. Demo data never reaches the database.
 export const DEMO_TRANSACTIONS: Transaction[] = [
-  { date:'2025-01-08', type:'Income',  description:'Bridal gown package – Sarah Lim',    category:'Gown Sales',             amount:3800, paymentMethod:'PayNow',        clientName:'Sarah Lim',         receiptNo:'REC-001', notes:'Full payment' },
-  { date:'2025-01-12', type:'Expense', description:'Fabric & lace materials',            category:'Cost of Goods',          amount:520,  paymentMethod:'Bank Transfer', clientName:'',                  receiptNo:'EXP-001', notes:'For Feb stock' },
-  { date:'2025-01-18', type:'Income',  description:'Gown alteration – Mrs Chan',         category:'Alteration Services',    amount:280,  paymentMethod:'Cash',          clientName:'Mrs Chan',          receiptNo:'REC-002', notes:'Hem & bustle' },
-  { date:'2025-01-25', type:'Expense', description:'Instagram ads – Jan',               category:'Marketing & Advertising',amount:150,  paymentMethod:'Bank Transfer', clientName:'',                  receiptNo:'EXP-002', notes:'Monthly boost' },
-  { date:'2025-02-03', type:'Income',  description:'Rental deposit – Amanda Koh',        category:'Deposits Received',      amount:500,  paymentMethod:'PayNow',        clientName:'Amanda Koh',        receiptNo:'REC-003', notes:'Deposit for Apr wedding' },
-  { date:'2025-02-10', type:'Income',  description:'Veil & accessories – Priya S',       category:'Accessories',            amount:320,  paymentMethod:'Cash',          clientName:'Priya Subramaniam', receiptNo:'REC-004', notes:'Pearl veil set' },
-  { date:'2025-02-14', type:'Expense', description:'Studio rental – Feb',               category:'Rental & Utilities',     amount:800,  paymentMethod:'Bank Transfer', clientName:'',                  receiptNo:'EXP-003', notes:'Monthly studio' },
-  { date:'2025-02-22', type:'Expense', description:'Alterations – external tailor',      category:'Alterations & Tailoring',amount:180,  paymentMethod:'Cash',          clientName:'',                  receiptNo:'EXP-004', notes:'Subcontract' },
-  { date:'2025-03-05', type:'Income',  description:'Gown rental – Grace Tan',            category:'Gown Rental',            amount:650,  paymentMethod:'PayNow',        clientName:'Grace Tan',         receiptNo:'REC-005', notes:'3-day rental' },
-  { date:'2025-03-12', type:'Expense', description:'Garment bags & packaging',           category:'Packaging & Supplies',   amount:95,   paymentMethod:'Cash',          clientName:'',                  receiptNo:'EXP-005', notes:'Bulk order' },
-  { date:'2025-03-20', type:'Income',  description:'Bridal gown – Michelle Ng',          category:'Gown Sales',             amount:4200, paymentMethod:'Bank Transfer', clientName:'Michelle Ng',       receiptNo:'REC-006', notes:'Includes fitting' },
-  { date:'2025-03-28', type:'Expense', description:'Sewing machine service',             category:'Equipment & Tools',      amount:120,  paymentMethod:'Cash',          clientName:'',                  receiptNo:'EXP-006', notes:'Annual service' },
-  { date:'2025-04-05', type:'Income',  description:'Alteration bundle – 3 gowns',        category:'Alteration Services',    amount:480,  paymentMethod:'PayNow',        clientName:'Various',           receiptNo:'REC-007', notes:'Walk-in clients' },
-  { date:'2025-04-15', type:'Expense', description:'Accounting fees – Q1',               category:'Professional Services',  amount:350,  paymentMethod:'Bank Transfer', clientName:'',                  receiptNo:'EXP-007', notes:'Quarterly bookkeeping' },
-  { date:'2025-05-02', type:'Income',  description:'Gown sales – Rebecca Ho',            category:'Gown Sales',             amount:3500, paymentMethod:'PayNow',        clientName:'Rebecca Ho',        receiptNo:'REC-008', notes:'Customised A-line' },
+  { id:'00000000-0000-4000-8000-100000000001', date:'2025-01-08', type:'Income',  description:'Bridal gown package – Sarah Lim',    category:'Gown Sales',             amount:3800, paymentMethod:'PayNow',        clientName:'Sarah Lim',         referenceNo:'REC-001', clientId:'', notes:'Full payment' },
+  { id:'00000000-0000-4000-8000-100000000002', date:'2025-01-12', type:'Expense', description:'Fabric & lace materials',            category:'Cost of Goods',          amount:520,  paymentMethod:'Bank Transfer', clientName:'',                  referenceNo:'EXP-001', clientId:'', notes:'For Feb stock' },
+  { id:'00000000-0000-4000-8000-100000000003', date:'2025-01-18', type:'Income',  description:'Gown alteration – Mrs Chan',         category:'Alteration Services',    amount:280,  paymentMethod:'Cash',          clientName:'Mrs Chan',          referenceNo:'REC-002', clientId:'', notes:'Hem & bustle' },
+  { id:'00000000-0000-4000-8000-100000000004', date:'2025-01-25', type:'Expense', description:'Instagram ads – Jan',               category:'Marketing & Advertising',amount:150,  paymentMethod:'Bank Transfer', clientName:'',                  referenceNo:'EXP-002', clientId:'', notes:'Monthly boost' },
+  { id:'00000000-0000-4000-8000-100000000005', date:'2025-02-03', type:'Income',  description:'Rental deposit – Amanda Koh',        category:'Deposits Received',      amount:500,  paymentMethod:'PayNow',        clientName:'Amanda Koh',        referenceNo:'REC-003', clientId:'', notes:'Deposit for Apr wedding' },
+  { id:'00000000-0000-4000-8000-100000000006', date:'2025-02-10', type:'Income',  description:'Veil & accessories – Priya S',       category:'Accessories',            amount:320,  paymentMethod:'Cash',          clientName:'Priya Subramaniam', referenceNo:'REC-004', clientId:'', notes:'Pearl veil set' },
+  { id:'00000000-0000-4000-8000-100000000007', date:'2025-02-14', type:'Expense', description:'Studio rental – Feb',               category:'Rental & Utilities',     amount:800,  paymentMethod:'Bank Transfer', clientName:'',                  referenceNo:'EXP-003', clientId:'', notes:'Monthly studio' },
+  { id:'00000000-0000-4000-8000-100000000008', date:'2025-02-22', type:'Expense', description:'Alterations – external tailor',      category:'Alterations & Tailoring',amount:180,  paymentMethod:'Cash',          clientName:'',                  referenceNo:'EXP-004', clientId:'', notes:'Subcontract' },
+  { id:'00000000-0000-4000-8000-100000000009', date:'2025-03-05', type:'Income',  description:'Gown rental – Grace Tan',            category:'Gown Rental',            amount:650,  paymentMethod:'PayNow',        clientName:'Grace Tan',         referenceNo:'REC-005', clientId:'', notes:'3-day rental' },
+  { id:'00000000-0000-4000-8000-100000000010', date:'2025-03-12', type:'Expense', description:'Garment bags & packaging',           category:'Packaging & Supplies',   amount:95,   paymentMethod:'Cash',          clientName:'',                  referenceNo:'EXP-005', clientId:'', notes:'Bulk order' },
+  { id:'00000000-0000-4000-8000-100000000011', date:'2025-03-20', type:'Income',  description:'Bridal gown – Michelle Ng',          category:'Gown Sales',             amount:4200, paymentMethod:'Bank Transfer', clientName:'Michelle Ng',       referenceNo:'REC-006', clientId:'', notes:'Includes fitting' },
+  { id:'00000000-0000-4000-8000-100000000012', date:'2025-03-28', type:'Expense', description:'Sewing machine service',             category:'Equipment & Tools',      amount:120,  paymentMethod:'Cash',          clientName:'',                  referenceNo:'EXP-006', clientId:'', notes:'Annual service' },
+  { id:'00000000-0000-4000-8000-100000000013', date:'2025-04-05', type:'Income',  description:'Alteration bundle – 3 gowns',        category:'Alteration Services',    amount:480,  paymentMethod:'PayNow',        clientName:'Various',           referenceNo:'REC-007', clientId:'', notes:'Walk-in clients' },
+  { id:'00000000-0000-4000-8000-100000000014', date:'2025-04-15', type:'Expense', description:'Accounting fees – Q1',               category:'Professional Services',  amount:350,  paymentMethod:'Bank Transfer', clientName:'',                  referenceNo:'EXP-007', clientId:'', notes:'Quarterly bookkeeping' },
+  { id:'00000000-0000-4000-8000-100000000015', date:'2025-05-02', type:'Income',  description:'Gown sales – Rebecca Ho',            category:'Gown Sales',             amount:3500, paymentMethod:'PayNow',        clientName:'Rebecca Ho',        referenceNo:'REC-008', clientId:'', notes:'Customised A-line' },
 ]
 
-// Monthly breakdown pre-computed from DEMO_TRANSACTIONS above.
+// Every demo transaction is in this year.
+export const DEMO_PNL_YEAR = 2025
+
+// Monthly breakdown pre-computed from DEMO_TRANSACTIONS above, matching what the
+// pnl_monthly() SQL function returns for them (see supabase/checks/0005_pnl_checks.sql).
 // February is intentionally a loss month (high studio rent, low income) — realistic for a bridal business.
 export const DEMO_MONTHLY: MonthlySummary[] = [
   { month: 'January',   income: 4080, expenses: 670,  netProfit: 3410,  profitMargin: 0.8358 },
@@ -39,7 +44,11 @@ export const DEMO_MONTHLY: MonthlySummary[] = [
   { month: 'December',  income: 0,    expenses: 0,    netProfit: 0,     profitMargin: 0 },
 ]
 
-// Pre-computed from the transactions above — matches what the Google Sheet formulas calculate
+export const DEMO_PNL_TOTAL: PnlTotals = {
+  income: 13_730, expenses: 2_215, netProfit: 11_515, profitMargin: 0.8387,
+}
+
+// Pre-computed from the transactions above, matching iras_summary(2025)
 export const DEMO_IRAS: IrasSummary = {
   revenue:        13_730,   // sum of all Income rows
   grossProfit:    13_730,   // same as revenue (service business)

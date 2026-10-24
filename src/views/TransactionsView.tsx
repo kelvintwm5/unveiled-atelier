@@ -1,5 +1,7 @@
 import { useEffect, useMemo, useState } from 'react'
-import { fetchTransactions, appendTransaction, formatSGD } from '../lib/sheets'
+import { listTransactions, createTransaction } from '../lib/transactions'
+import { formatSGD } from '../lib/money'
+import { todaySgt } from '../lib/dates'
 import type { Transaction } from '../types'
 
 const COLUMNS = [
@@ -10,7 +12,7 @@ const COLUMNS = [
   { key: 'amount',        label: 'Amount (SGD)' },
   { key: 'paymentMethod', label: 'Payment Method' },
   { key: 'clientName',    label: 'Client Name' },
-  { key: 'receiptNo',     label: 'Invoice No.' },
+  { key: 'referenceNo',   label: 'Invoice No.' },
   { key: 'notes',         label: 'Notes' },
 ]
 
@@ -21,10 +23,9 @@ const MONTHS = [
 
 interface Props {
   mode: 'demo' | 'app'
-  accessToken?: string
 }
 
-export default function TransactionsView({ mode, accessToken }: Props) {
+export default function TransactionsView({ mode }: Props) {
   const [data, setData]       = useState<Transaction[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError]     = useState<string | null>(null)
@@ -35,13 +36,13 @@ export default function TransactionsView({ mode, accessToken }: Props) {
   function reload() {
     setLoading(true)
     setError(null)
-    fetchTransactions(mode, accessToken)
+    listTransactions(mode)
       .then(setData)
       .catch(e => setError(e.message))
       .finally(() => setLoading(false))
   }
 
-  useEffect(() => { reload() }, [mode, accessToken])
+  useEffect(() => { reload() }, [mode])
 
   // Derive available years from the data
   const years = useMemo(() => {
@@ -63,7 +64,7 @@ export default function TransactionsView({ mode, accessToken }: Props) {
 
       {showAdd && (
         <AddTransactionModal
-          accessToken={accessToken!}
+          mode={mode}
           onClose={() => setShowAdd(false)}
           onSaved={() => { setShowAdd(false); reload() }}
         />
@@ -74,7 +75,7 @@ export default function TransactionsView({ mode, accessToken }: Props) {
           <div>
             <h2 className="text-xl font-semibold text-stone-800">Transactions</h2>
             <p className="text-stone-400 text-sm mt-0.5">
-              {mode === 'demo' ? 'Sample data — sign in to see your real transactions' : 'Live from Google Sheets'}
+              {mode === 'demo' ? 'Sample data — sign in to see your real transactions' : 'Newest first'}
             </p>
           </div>
           <div className="flex items-center gap-3">
@@ -180,8 +181,8 @@ export default function TransactionsView({ mode, accessToken }: Props) {
                 </tr>
               )}
 
-              {!loading && !error && filtered.map((tx, i) => (
-                <tr key={i} className="border-b border-stone-100 hover:bg-stone-50 transition-colors">
+              {!loading && !error && filtered.map(tx => (
+                <tr key={tx.id} className="border-b border-stone-100 hover:bg-stone-50 transition-colors">
                   <td className="px-4 py-3 text-stone-500 whitespace-nowrap">{tx.date}</td>
                   <td className="px-4 py-3">
                     <span className={[
@@ -203,7 +204,7 @@ export default function TransactionsView({ mode, accessToken }: Props) {
                   </td>
                   <td className="px-4 py-3 text-stone-500 whitespace-nowrap">{tx.paymentMethod}</td>
                   <td className="px-4 py-3 text-stone-600 whitespace-nowrap">{tx.clientName}</td>
-                  <td className="px-4 py-3 text-stone-400 whitespace-nowrap">{tx.receiptNo}</td>
+                  <td className="px-4 py-3 text-stone-400 whitespace-nowrap">{tx.referenceNo}</td>
                   <td className="px-4 py-3 text-stone-400 max-w-xs truncate">{tx.notes}</td>
                 </tr>
               ))}
@@ -229,30 +230,29 @@ export default function TransactionsView({ mode, accessToken }: Props) {
 // Add Transaction Modal
 // ---------------------------------------------------------------------------
 
-const today = () => new Date().toISOString().slice(0, 10)
-
 const EMPTY_FORM = {
-  date: today(),
+  date: '',
   type: 'Income' as 'Income' | 'Expense',
   description: '',
   category: '',
   amount: '',
   paymentMethod: '',
   clientName: '',
-  receiptNo: '',
+  referenceNo: '',
   notes: '',
 }
 
 function AddTransactionModal({
-  accessToken,
+  mode,
   onClose,
   onSaved,
 }: {
-  accessToken: string
+  mode: 'demo' | 'app'
   onClose: () => void
   onSaved: () => void
 }) {
-  const [form, setForm] = useState({ ...EMPTY_FORM, date: today() })
+  // Today in Singapore: the UTC date is still yesterday before 08:00 SGT.
+  const [form, setForm] = useState({ ...EMPTY_FORM, date: todaySgt() })
   const [saving, setSaving] = useState(false)
   const [error, setError]   = useState<string | null>(null)
 
@@ -270,7 +270,7 @@ function AddTransactionModal({
     setSaving(true)
     setError(null)
     try {
-      await appendTransaction(accessToken, {
+      await createTransaction(mode, {
         date:          form.date,
         type:          form.type,
         description:   form.description,
@@ -278,7 +278,8 @@ function AddTransactionModal({
         amount,
         paymentMethod: form.paymentMethod,
         clientName:    form.clientName,
-        receiptNo:     form.receiptNo,
+        clientId:      '',
+        referenceNo:   form.referenceNo,
         notes:         form.notes,
       })
       onSaved()
@@ -385,8 +386,8 @@ function AddTransactionModal({
             <Field label="Invoice No." className="col-span-1">
               <input
                 type="text"
-                value={form.receiptNo}
-                onChange={e => set('receiptNo', e.target.value)}
+                value={form.referenceNo}
+                onChange={e => set('referenceNo', e.target.value)}
                 placeholder="e.g. RCP-001"
                 className={inputCls}
               />
