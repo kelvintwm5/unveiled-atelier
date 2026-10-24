@@ -1,8 +1,9 @@
 import { useEffect, useMemo, useState } from 'react'
-import { listTransactions, createTransaction } from '../lib/transactions'
+import { listTransactions, createTransaction, deleteTransaction } from '../lib/transactions'
+import { listClients, clientLabels } from '../lib/clientData'
 import { formatSGD } from '../lib/money'
 import { todaySgt } from '../lib/dates'
-import type { Transaction } from '../types'
+import type { Client, Transaction } from '../types'
 
 const COLUMNS = [
   { key: 'date',          label: 'Date' },
@@ -14,6 +15,15 @@ const COLUMNS = [
   { key: 'clientName',    label: 'Client Name' },
   { key: 'referenceNo',   label: 'Invoice No.' },
   { key: 'notes',         label: 'Notes' },
+]
+
+// The expense categories from the Google Sheet's IRAS tab. Suggestions only: any
+// text is accepted, and categories already used in the ledger are offered too.
+const EXPENSE_CATEGORIES = [
+  'Cost of Goods', 'Alterations & Tailoring', 'Rental & Utilities',
+  'Marketing & Advertising', 'Professional Services', 'Transport',
+  'Packaging & Supplies', 'Equipment & Tools', 'Training & Development',
+  'Bank & Payment Fees', 'Miscellaneous',
 ]
 
 const MONTHS = [
@@ -32,6 +42,12 @@ export default function TransactionsView({ mode }: Props) {
   const [filterYear, setFilterYear]   = useState<string>('all')
   const [filterMonth, setFilterMonth] = useState<string>('all')
   const [showAdd, setShowAdd] = useState(false)
+  const [deletingId, setDeletingId]   = useState<string | null>(null)
+  const [actionError, setActionError] = useState<string | null>(null)
+
+  // Demo mode is read-only, so there is nothing to delete there.
+  const canEdit = mode === 'app'
+  const colCount = COLUMNS.length + (canEdit ? 1 : 0)
 
   function reload() {
     setLoading(true)
@@ -43,6 +59,28 @@ export default function TransactionsView({ mode }: Props) {
   }
 
   useEffect(() => { reload() }, [mode])
+
+  const categories = useMemo(() => {
+    const used = data.map(tx => tx.category).filter(Boolean)
+    return Array.from(new Set([...EXPENSE_CATEGORIES, ...used])).sort()
+  }, [data])
+
+  async function handleDelete(tx: Transaction) {
+    const ok = window.confirm(
+      `Delete "${tx.description}" (${formatSGD(tx.amount)} on ${tx.date})? This can't be undone.`
+    )
+    if (!ok) return
+    setDeletingId(tx.id)
+    setActionError(null)
+    try {
+      await deleteTransaction(mode, tx.id)
+      reload()
+    } catch (err) {
+      setActionError(err instanceof Error ? err.message : String(err))
+    } finally {
+      setDeletingId(null)
+    }
+  }
 
   // Derive available years from the data
   const years = useMemo(() => {
@@ -65,6 +103,7 @@ export default function TransactionsView({ mode }: Props) {
       {showAdd && (
         <AddTransactionModal
           mode={mode}
+          categories={categories}
           onClose={() => setShowAdd(false)}
           onSaved={() => { setShowAdd(false); reload() }}
         />
@@ -142,6 +181,11 @@ export default function TransactionsView({ mode }: Props) {
       </div>
 
       <div className="flex-1 overflow-auto px-4 py-4 md:px-8 md:py-6">
+        {actionError && (
+          <p className="mb-3 bg-red-50 border border-red-200 rounded-lg px-4 py-2.5 text-red-600 text-sm">
+            {actionError}
+          </p>
+        )}
         <div className="bg-white rounded-xl border border-stone-200 overflow-x-auto">
           <table className="w-full text-sm">
 
@@ -154,13 +198,14 @@ export default function TransactionsView({ mode }: Props) {
                     {col.label}
                   </th>
                 ))}
+                {canEdit && <th className="px-2 py-3"><span className="sr-only">Actions</span></th>}
               </tr>
             </thead>
 
             <tbody>
               {loading && (
                 <tr>
-                  <td colSpan={COLUMNS.length} className="px-4 py-16 text-center">
+                  <td colSpan={colCount} className="px-4 py-16 text-center">
                     <div className="flex items-center justify-center gap-2 text-stone-400">
                       <svg className="w-4 h-4 animate-spin" viewBox="0 0 24 24" fill="none">
                         <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"/>
@@ -174,7 +219,7 @@ export default function TransactionsView({ mode }: Props) {
 
               {!loading && error && (
                 <tr>
-                  <td colSpan={COLUMNS.length} className="px-4 py-12 text-center">
+                  <td colSpan={colCount} className="px-4 py-12 text-center">
                     <p className="text-red-500 text-sm font-medium">Failed to load</p>
                     <p className="text-stone-400 text-xs mt-1 max-w-sm mx-auto">{error}</p>
                   </td>
@@ -206,12 +251,29 @@ export default function TransactionsView({ mode }: Props) {
                   <td className="px-4 py-3 text-stone-600 whitespace-nowrap">{tx.clientName}</td>
                   <td className="px-4 py-3 text-stone-400 whitespace-nowrap">{tx.referenceNo}</td>
                   <td className="px-4 py-3 text-stone-400 max-w-xs truncate">{tx.notes}</td>
+                  {canEdit && (
+                    <td className="px-2 py-3 text-right">
+                      <button
+                        onClick={() => handleDelete(tx)}
+                        disabled={deletingId !== null}
+                        aria-label={`Delete ${tx.description}`}
+                        title="Delete"
+                        className="p-1.5 rounded-md text-stone-300 hover:text-red-600 hover:bg-red-50
+                                   transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+                      >
+                        <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5}
+                            d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                        </svg>
+                      </button>
+                    </td>
+                  )}
                 </tr>
               ))}
 
               {!loading && !error && filtered.length === 0 && (
                 <tr>
-                  <td colSpan={COLUMNS.length} className="px-4 py-16 text-center text-stone-400 text-sm">
+                  <td colSpan={colCount} className="px-4 py-16 text-center text-stone-400 text-sm">
                     {data.length > 0 ? 'No transactions match the selected filters' : 'No transactions found'}
                   </td>
                 </tr>
@@ -238,16 +300,19 @@ const EMPTY_FORM = {
   amount: '',
   paymentMethod: '',
   clientName: '',
+  clientId: '',
   referenceNo: '',
   notes: '',
 }
 
 function AddTransactionModal({
   mode,
+  categories,
   onClose,
   onSaved,
 }: {
   mode: 'demo' | 'app'
+  categories: string[]
   onClose: () => void
   onSaved: () => void
 }) {
@@ -255,6 +320,22 @@ function AddTransactionModal({
   const [form, setForm] = useState({ ...EMPTY_FORM, date: todaySgt() })
   const [saving, setSaving] = useState(false)
   const [error, setError]   = useState<string | null>(null)
+  const [clients, setClients] = useState<Client[]>([])
+  const [clientsError, setClientsError] = useState<string | null>(null)
+
+  // Linking to a tracked client is optional, so if the list can't load the form
+  // still works with a typed name.
+  useEffect(() => {
+    listClients(mode)
+      .then(setClients)
+      .catch(err => setClientsError(err instanceof Error ? err.message : String(err)))
+  }, [mode])
+
+  const labels = useMemo(() => clientLabels(clients), [clients])
+  const sortedClients = useMemo(
+    () => [...clients].sort((a, b) => (labels.get(a.id) ?? '').localeCompare(labels.get(b.id) ?? '')),
+    [clients, labels],
+  )
 
   function set(field: keyof typeof EMPTY_FORM, value: string) {
     setForm(f => ({ ...f, [field]: value }))
@@ -269,6 +350,9 @@ function AddTransactionModal({
     }
     setSaving(true)
     setError(null)
+    // A linked client's name is saved as it is today, so the ledger still reads
+    // correctly if the client record is renamed later.
+    const linked = clients.find(c => c.id === form.clientId)
     try {
       await createTransaction(mode, {
         date:          form.date,
@@ -277,8 +361,8 @@ function AddTransactionModal({
         category:      form.category,
         amount,
         paymentMethod: form.paymentMethod,
-        clientName:    form.clientName,
-        clientId:      '',
+        clientName:    linked ? linked.name : form.clientName,
+        clientId:      linked ? linked.id : '',
         referenceNo:   form.referenceNo,
         notes:         form.notes,
       })
@@ -356,11 +440,15 @@ function AddTransactionModal({
             <Field label="Category" className="col-span-1">
               <input
                 type="text"
+                list="transaction-categories"
                 value={form.category}
                 onChange={e => set('category', e.target.value)}
-                placeholder="e.g. Gown Rental"
+                placeholder="e.g. Veil Rental"
                 className={inputCls}
               />
+              <datalist id="transaction-categories">
+                {categories.map(c => <option key={c} value={c} />)}
+              </datalist>
             </Field>
 
             <Field label="Payment Method" className="col-span-1">
@@ -369,16 +457,6 @@ function AddTransactionModal({
                 value={form.paymentMethod}
                 onChange={e => set('paymentMethod', e.target.value)}
                 placeholder="e.g. PayNow"
-                className={inputCls}
-              />
-            </Field>
-
-            <Field label="Client Name" className="col-span-1">
-              <input
-                type="text"
-                value={form.clientName}
-                onChange={e => set('clientName', e.target.value)}
-                placeholder="e.g. Sarah Lim"
                 className={inputCls}
               />
             </Field>
@@ -392,6 +470,34 @@ function AddTransactionModal({
                 className={inputCls}
               />
             </Field>
+
+            <Field label="Client" className="col-span-2">
+              <select
+                value={form.clientId}
+                onChange={e => set('clientId', e.target.value)}
+                className={inputCls}
+              >
+                <option value="">Not in client list</option>
+                {sortedClients.map(c => (
+                  <option key={c.id} value={c.id}>{labels.get(c.id)}</option>
+                ))}
+              </select>
+              {clientsError && (
+                <p className="text-red-500 text-xs mt-1">Couldn't load clients: {clientsError}</p>
+              )}
+            </Field>
+
+            {form.clientId === '' && (
+              <Field label="Name (optional)" className="col-span-2">
+                <input
+                  type="text"
+                  value={form.clientName}
+                  onChange={e => set('clientName', e.target.value)}
+                  placeholder="e.g. a walk-in client, or a supplier"
+                  className={inputCls}
+                />
+              </Field>
+            )}
 
             <Field label="Notes" className="col-span-2">
               <textarea
