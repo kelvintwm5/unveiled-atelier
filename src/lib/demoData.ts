@@ -49,8 +49,20 @@ export const DEMO_IRAS: IrasSummary = {
 
 // ── Client tracker ────────────────────────────────────────────────────────────
 
+// Fixed, readable ids so demo activities can point at demo clients. Demo data
+// never reaches the database, so these only have to be unique among themselves.
+const DEMO_CLIENT_IDS = {
+  'Rachel Tan':    '00000000-0000-4000-8000-000000000001',
+  'Priya Nair':    '00000000-0000-4000-8000-000000000002',
+  'Amanda Goh':    '00000000-0000-4000-8000-000000000003',
+  'Jessica Lim':   '00000000-0000-4000-8000-000000000004',
+  'Sarah Wong':    '00000000-0000-4000-8000-000000000005',
+  'Mei Ling Chen': '00000000-0000-4000-8000-000000000006',
+} as const
+
 export const DEMO_CLIENTS: Client[] = [
   {
+    id: DEMO_CLIENT_IDS['Rachel Tan'],
     name: 'Rachel Tan',
     email: 'rachel.tan@gmail.com',
     phone: '+65 9123 4567',
@@ -61,6 +73,7 @@ export const DEMO_CLIENTS: Client[] = [
     notes: 'Cathedral length, French lace trim. 2nd fitting done, minor adjustments pending.',
   },
   {
+    id: DEMO_CLIENT_IDS['Priya Nair'],
     name: 'Priya Nair',
     email: 'priya.n@hotmail.com',
     phone: '+65 8234 5678',
@@ -71,6 +84,7 @@ export const DEMO_CLIENTS: Client[] = [
     notes: 'Traditional Indian-Chinese wedding. Likes the pearl edge rental.',
   },
   {
+    id: DEMO_CLIENT_IDS['Amanda Goh'],
     name: 'Amanda Goh',
     email: 'amanda.goh@outlook.com',
     phone: '+65 9345 6789',
@@ -81,6 +95,7 @@ export const DEMO_CLIENTS: Client[] = [
     notes: 'Elbow length, silk organza. Deposit paid. Pickup 8 March.',
   },
   {
+    id: DEMO_CLIENT_IDS['Jessica Lim'],
     name: 'Jessica Lim',
     email: 'jess.lim@gmail.com',
     phone: '+65 8456 7890',
@@ -91,6 +106,7 @@ export const DEMO_CLIENTS: Client[] = [
     notes: 'Contacted via Instagram. Interested in floor-length options.',
   },
   {
+    id: DEMO_CLIENT_IDS['Sarah Wong'],
     name: 'Sarah Wong',
     email: 'sarah.wong@yahoo.com',
     phone: '+65 9567 8901',
@@ -101,6 +117,7 @@ export const DEMO_CLIENTS: Client[] = [
     notes: 'Fingertip length, applique flowers. Delivered and very happy.',
   },
   {
+    id: DEMO_CLIENT_IDS['Mei Ling Chen'],
     name: 'Mei Ling Chen',
     email: 'meiling.chen@gmail.com',
     phone: '+65 8678 9012',
@@ -114,57 +131,65 @@ export const DEMO_CLIENTS: Client[] = [
 
 export const DEMO_ACTIVITIES: ClientActivity[] = [
   {
+    id: '00000000-0000-4000-9000-000000000001',
     date: '2025-01-15',
-    clientName: 'Rachel Tan',
+    clientId: DEMO_CLIENT_IDS['Rachel Tan'],
     type: 'In-Person',
     notes: 'Second fitting done. Minor adjustment to the lace trim needed. Ready by end of Jan.',
     nextFollowUp: '2025-01-29',
   },
   {
+    id: '00000000-0000-4000-9000-000000000002',
     date: '2025-01-10',
-    clientName: 'Priya Nair',
+    clientId: DEMO_CLIENT_IDS['Priya Nair'],
     type: 'WhatsApp',
     notes: 'Sent photos of pearl edge rental options. She liked the fingertip length.',
     nextFollowUp: '2025-01-17',
   },
   {
+    id: '00000000-0000-4000-9000-000000000003',
     date: '2025-01-08',
-    clientName: 'Amanda Goh',
+    clientId: DEMO_CLIENT_IDS['Amanda Goh'],
     type: 'Call',
     notes: 'Confirmed pickup date — 8 March. Deposit received via PayNow.',
     nextFollowUp: '',
   },
   {
+    id: '00000000-0000-4000-9000-000000000004',
     date: '2025-01-05',
-    clientName: 'Jessica Lim',
+    clientId: DEMO_CLIENT_IDS['Jessica Lim'],
     type: 'Email',
     notes: 'Replied to Instagram DM with pricing brochure and available rental dates.',
     nextFollowUp: '2025-01-12',
   },
   {
+    id: '00000000-0000-4000-9000-000000000005',
     date: '2025-01-03',
-    clientName: 'Rachel Tan',
+    clientId: DEMO_CLIENT_IDS['Rachel Tan'],
     type: 'Call',
     notes: 'Called to schedule 2nd fitting. She is available 15 Jan.',
     nextFollowUp: '2025-01-15',
   },
   {
+    id: '00000000-0000-4000-9000-000000000006',
     date: '2024-12-20',
-    clientName: 'Sarah Wong',
+    clientId: DEMO_CLIENT_IDS['Sarah Wong'],
     type: 'In-Person',
     notes: 'Final handover. Client loved the result. Left a 5-star Google review.',
     nextFollowUp: '',
   },
   {
+    id: '00000000-0000-4000-9000-000000000007',
     date: '2024-12-10',
-    clientName: 'Mei Ling Chen',
+    clientId: DEMO_CLIENT_IDS['Mei Ling Chen'],
     type: 'WhatsApp',
     notes: 'Initial inquiry about bespoke rental concept. Explained pricing model.',
     nextFollowUp: '2025-01-15',
   },
   {
+    id: '00000000-0000-4000-9000-000000000008',
     date: '2024-12-05',
-    clientName: 'Priya Nair',
+    clientId: DEMO_CLIENT_IDS['Priya Nair'],
     type: 'In-Person',
     notes: 'First consultation. Showed rental samples. Budget is S$150–200.',
     nextFollowUp: '2025-01-10',

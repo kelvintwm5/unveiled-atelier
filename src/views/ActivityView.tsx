@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
-import { fetchClients, fetchActivities, appendActivity } from '../lib/clientData'
-import type { Client, ClientActivity, ActivityType } from '../types'
+import { listClients, listActivities, createActivity, clientLabels } from '../lib/clientData'
+import { todaySgt } from '../lib/dates'
+import type { Client, ClientActivity, ActivityType, NewActivity } from '../types'
 
 const ACTIVITY_TYPES: ActivityType[] = ['Call', 'WhatsApp', 'Email', 'In-Person', 'Note']
 
@@ -18,57 +19,62 @@ const inputCls = [
   'placeholder:text-stone-300 bg-white',
 ].join(' ')
 
-const today = new Date().toISOString().split('T')[0]
+const ALL_CLIENTS = 'All'
 
-const EMPTY_FORM = {
-  date:         today,
-  clientName:   '',
-  type:         'Call' as ActivityType,
-  notes:        '',
-  nextFollowUp: '',
+// A function, not a constant: computed at module load, "today" would go stale in
+// a tab left open overnight.
+function emptyForm(): NewActivity {
+  return { date: todaySgt(), clientId: '', type: 'Call', notes: '', nextFollowUp: '' }
 }
 
 interface Props {
   mode: 'demo' | 'app'
-  accessToken?: string
 }
 
-export default function ActivityView({ mode, accessToken }: Props) {
+export default function ActivityView({ mode }: Props) {
   const [clients, setClients]         = useState<Client[]>([])
   const [activities, setActivities]   = useState<ClientActivity[]>([])
   const [loading, setLoading]         = useState(true)
   const [error, setError]             = useState('')
-  const [clientFilter, setClientFilter] = useState('All')
+  const [clientFilter, setClientFilter] = useState(ALL_CLIENTS)
   const [showModal, setShowModal]     = useState(false)
-  const [form, setForm]               = useState(EMPTY_FORM)
+  const [form, setForm]               = useState(emptyForm)
   const [saving, setSaving]           = useState(false)
   const [saveError, setSaveError]     = useState('')
 
   useEffect(() => {
     setLoading(true)
-    Promise.all([fetchClients(mode, accessToken), fetchActivities(mode, accessToken)])
+    setError('')
+    Promise.all([listClients(mode), listActivities(mode)])
       .then(([c, a]) => { setClients(c); setActivities(a) })
-      .catch(e => setError(e.message))
+      .catch((e: unknown) => setError(e instanceof Error ? e.message : String(e)))
       .finally(() => setLoading(false))
-  }, [mode, accessToken])
+  }, [mode])
 
-  const clientNames = ['All', ...Array.from(new Set(clients.map(c => c.name))).sort()]
+  const today = todaySgt()
+  const labels = clientLabels(clients)
+  const sortedClients = [...clients].sort((a, b) =>
+    (labels.get(a.id) ?? '').localeCompare(labels.get(b.id) ?? ''))
 
-  const filtered = (clientFilter === 'All' ? activities : activities.filter(a => a.clientName === clientFilter))
+  const filtered = (clientFilter === ALL_CLIENTS ? activities : activities.filter(a => a.clientId === clientFilter))
     .slice()
     .sort((a, b) => b.date.localeCompare(a.date))
 
+  function openModal() {
+    setForm(emptyForm())
+    setSaveError('')
+    setShowModal(true)
+  }
+
   async function handleLog() {
-    if (!form.clientName) { setSaveError('Select a client.'); return }
+    if (!form.clientId) { setSaveError('Select a client.'); return }
     if (!form.notes.trim()) { setSaveError('Notes are required.'); return }
     setSaving(true)
     setSaveError('')
-    const activity: ClientActivity = { ...form, notes: form.notes.trim() }
     try {
-      if (mode === 'app' && accessToken) await appendActivity(accessToken, activity)
+      const activity = await createActivity(mode, form)
       setActivities(prev => [...prev, activity])
       setShowModal(false)
-      setForm(EMPTY_FORM)
     } catch (e: unknown) {
       setSaveError(e instanceof Error ? e.message : 'Failed to save.')
     } finally {
@@ -90,7 +96,7 @@ export default function ActivityView({ mode, accessToken }: Props) {
             </p>
           </div>
           <button
-            onClick={() => setShowModal(true)}
+            onClick={openModal}
             className="shrink-0 px-4 py-2 bg-rose-800 text-white text-sm rounded-lg
                        hover:bg-rose-700 transition-colors"
           >
@@ -106,7 +112,8 @@ export default function ActivityView({ mode, accessToken }: Props) {
             className="border border-stone-200 rounded-lg px-3 py-2 text-sm text-stone-800 bg-white
                        focus:outline-none focus:ring-2 focus:ring-rose-300"
           >
-            {clientNames.map(n => <option key={n} value={n}>{n}</option>)}
+            <option value={ALL_CLIENTS}>All clients</option>
+            {sortedClients.map(c => <option key={c.id} value={c.id}>{labels.get(c.id)}</option>)}
           </select>
         </div>
 
@@ -121,8 +128,13 @@ export default function ActivityView({ mode, accessToken }: Props) {
             </div>
           ) : (
             <div className="space-y-3">
-              {filtered.map((a, i) => (
-                <ActivityRow key={i} activity={a} today={today} />
+              {filtered.map(a => (
+                <ActivityRow
+                  key={a.id}
+                  activity={a}
+                  clientName={labels.get(a.clientId) ?? 'Unknown client'}
+                  today={today}
+                />
               ))}
             </div>
           )
@@ -143,10 +155,10 @@ export default function ActivityView({ mode, accessToken }: Props) {
                   onChange={e => setForm(f => ({ ...f, date: e.target.value }))} />
               </Field>
               <Field label="Client *">
-                <select className={inputCls} value={form.clientName}
-                  onChange={e => setForm(f => ({ ...f, clientName: e.target.value }))}>
+                <select className={inputCls} value={form.clientId}
+                  onChange={e => setForm(f => ({ ...f, clientId: e.target.value }))}>
                   <option value="">Select client…</option>
-                  {clients.map(c => <option key={c.name} value={c.name}>{c.name}</option>)}
+                  {sortedClients.map(c => <option key={c.id} value={c.id}>{labels.get(c.id)}</option>)}
                 </select>
               </Field>
               <Field label="Type">
@@ -168,7 +180,7 @@ export default function ActivityView({ mode, accessToken }: Props) {
             </div>
             <div className="px-6 py-4 border-t border-stone-100 flex justify-end gap-3">
               <button
-                onClick={() => { setShowModal(false); setForm(EMPTY_FORM); setSaveError('') }}
+                onClick={() => setShowModal(false)}
                 className="px-4 py-2 text-sm text-stone-600 hover:text-stone-800 transition-colors"
               >
                 Cancel
@@ -189,7 +201,11 @@ export default function ActivityView({ mode, accessToken }: Props) {
   )
 }
 
-function ActivityRow({ activity: a, today }: { activity: ClientActivity; today: string }) {
+function ActivityRow({ activity: a, clientName, today }: {
+  activity: ClientActivity
+  clientName: string
+  today: string
+}) {
   const overdue = a.nextFollowUp && a.nextFollowUp <= today
   return (
     <div className="bg-white border border-stone-200 rounded-xl p-4">
@@ -199,7 +215,7 @@ function ActivityRow({ activity: a, today }: { activity: ClientActivity; today: 
         </div>
         <div className="flex-1 min-w-0">
           <div className="flex items-center gap-2 mb-1 flex-wrap">
-            <span className="text-sm font-medium text-stone-800">{a.clientName}</span>
+            <span className="text-sm font-medium text-stone-800">{clientName}</span>
             <span className={`text-xs px-1.5 py-0.5 rounded font-medium ${TYPE_COLORS[a.type]}`}>
               {a.type}
             </span>

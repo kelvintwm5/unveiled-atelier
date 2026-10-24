@@ -136,6 +136,7 @@ export default function AppShell({ auth, onSignOut }: AppShellProps) {
 
   const mode        = auth.mode
   // The legacy Sheets/Docs views still call Google directly with this token.
+  // The client views don't need it: they read Supabase with the Supabase session.
   const accessToken = auth.mode === 'app' ? auth.googleToken ?? undefined : undefined
   const googleExpired = auth.mode === 'app' && !auth.googleToken
 
@@ -196,10 +197,10 @@ export default function AppShell({ auth, onSignOut }: AppShellProps) {
           {activeView === 'tax'              && <TaxSummaryView mode={mode} accessToken={accessToken} />}
           {activeView === 'invoices'         && <InvoiceView mode={mode} accessToken={accessToken} />}
           {activeView === 'pricing'          && <PricingView />}
-          {activeView === 'client-dashboard' && <ClientDashboardView mode={mode} accessToken={accessToken} />}
-          {activeView === 'pipeline'         && <PipelineView mode={mode} accessToken={accessToken} />}
-          {activeView === 'activity'         && <ActivityView mode={mode} accessToken={accessToken} />}
-          {activeView === 'client-chat'      && <ClientChatView mode={mode} accessToken={accessToken} />}
+          {activeView === 'client-dashboard' && <ClientDashboardView mode={mode} />}
+          {activeView === 'pipeline'         && <PipelineView mode={mode} />}
+          {activeView === 'activity'         && <ActivityView mode={mode} />}
+          {activeView === 'client-chat'      && <ClientChatView mode={mode} />}
         </main>
 
         {/* Mobile bottom nav — horizontally scrollable to fit all views */}
