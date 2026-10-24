@@ -96,6 +96,27 @@ export function onOwnerSessionChange(cb: (session: OwnerSession | null) => void)
 }
 
 /**
+ * Asks the database whether the signed-in user is in app_owners. This is the same
+ * is_app_owner() the RLS policies use, so the UI and the data can't disagree
+ * about who is an owner. It only decides what the UI shows; RLS still guards the data.
+ */
+export async function isAppOwner(): Promise<boolean> {
+  const { data, error } = await getSupabase().rpc('is_app_owner')
+  if (error) throw new Error(`Couldn't check your access: ${error.message}`)
+  return data === true
+}
+
+/**
+ * The Supabase access token (a JWT) for calls to our own /api functions, which
+ * verify it before doing anything. Unlike the Google token, supabase-js keeps it fresh.
+ */
+export async function getAccessToken(): Promise<string | null> {
+  const { data, error } = await getSupabase().auth.getSession()
+  if (error) throw new Error(`Couldn't read your session: ${error.message}`)
+  return data.session?.access_token ?? null
+}
+
+/**
  * A failed or cancelled Google redirect comes back as ?error_description=… (or
  * in the hash). supabase-js swallows it, so read it here and tidy the URL.
  */
