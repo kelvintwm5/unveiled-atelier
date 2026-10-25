@@ -121,6 +121,9 @@ npm test         # Vitest, for the pure domain modules in src/lib
    `supabase/migrations/`. Never edit a migration that has already been applied, and
    never change the schema in the Supabase dashboard without capturing the change in
    a migration.
+   Every `UPDATE` and `DELETE` needs a `WHERE`, even in a function and even on a
+   one-row table (`where id`): Supabase's API runs pg-safeupdate, which rejects them
+   otherwise. The SQL editor and local tests don't, so they won't catch it (see 0007).
 8. **Stay small.** One owner, low volume. Prefer plain functions and SQL to new
    libraries. A new dependency needs a stated reason.
 
