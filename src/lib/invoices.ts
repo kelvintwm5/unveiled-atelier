@@ -1,7 +1,8 @@
 // All invoice data access lives here. Views call these functions and never see the
 // Supabase client or the database's snake_case column names.
-//   demo → an in-memory copy of the fixtures; no network. Drafts can be edited
-//          for the session, but nothing can be issued or voided.
+//   demo → an in-memory copy of the fixtures; no network. Drafts and settings
+//          can be edited for the session, but nothing can be issued or voided,
+//          and PDFs are made in the browser without being stored.
 //   app  → the invoices tables and functions in 0006, guarded by RLS
 //
 // The invoice number, the issue date and the freezing of an issued invoice are
@@ -11,6 +12,8 @@
 import { getSupabase } from './supabase'
 import { amountPayable, buildTotalsRows, calcSubtotal } from './invoiceTotals'
 import { DEMO_INVOICES, DEMO_INVOICE_SETTINGS } from './demoData'
+import { renderFromIssued } from './invoiceRender'
+import { renderInvoicePdf } from './invoicePdf'
 import type {
   BusinessDetails, Invoice, InvoiceDraft, InvoiceKind, InvoiceLine, InvoiceSettings,
   InvoiceStatus, InvoiceTemplate, TotalsRow,
@@ -25,7 +28,12 @@ const DEMO_NO_ISSUE = 'The demo can’t issue or void invoices. Sign in to issue
 // Lives until the page reloads; nothing is saved anywhere.
 const demo = {
   invoices: DEMO_INVOICES.map(copyInvoice),
+  settings: { ...DEMO_INVOICE_SETTINGS },
 }
+
+// The private Storage bucket from 0006. Each issued invoice's PDF is stored
+// once, as <invoice number>.pdf, and can't be overwritten.
+const PDF_BUCKET = 'invoices'
 
 function copyInvoice(inv: Invoice): Invoice {
   return {
@@ -200,6 +208,22 @@ function fromLines(lines: InvoiceLine[]) {
   }))
 }
 
+function fromSettings(st: InvoiceSettings): SettingsRow {
+  const text = (v: string) => v.trim() || null
+  return {
+    business_name:         text(st.businessName),
+    address:               text(st.address),
+    email:                 text(st.email),
+    phone:                 text(st.phone),
+    paynow:                text(st.paynow),
+    bank_name:             text(st.bankName),
+    bank_account_name:     text(st.bankAccountName),
+    bank_account_no:       text(st.bankAccountNo),
+    default_terms_rental:  text(st.defaultTermsRental),
+    default_terms_bespoke: text(st.defaultTermsBespoke),
+  }
+}
+
 function toSettings(r: SettingsRow): InvoiceSettings {
   return {
     businessName:        r.business_name ?? '',
@@ -285,7 +309,7 @@ export async function getInvoice(mode: Mode, id: string): Promise<Invoice> {
 
 /** Business details and default terms. Owner-edited data, not code. */
 export async function getInvoiceSettings(mode: Mode): Promise<InvoiceSettings> {
-  if (mode === 'demo') return { ...DEMO_INVOICE_SETTINGS }
+  if (mode === 'demo') return { ...demo.settings }
   const { data, error } = await getSupabase()
     .from('invoice_settings')
     .select(SETTINGS_COLUMNS)
@@ -293,6 +317,26 @@ export async function getInvoiceSettings(mode: Mode): Promise<InvoiceSettings> {
   if (error) throw new Error(`Couldn't load the invoice settings: ${error.message}`)
   if (!data) throw new Error('The invoice settings are missing. Check that migration 0006 is applied.')
   return toSettings(data as SettingsRow)
+}
+
+/**
+ * Saves the business details and default terms. Invoices already issued keep
+ * the details they were issued with; drafts pick up the new ones.
+ */
+export async function updateInvoiceSettings(mode: Mode, settings: InvoiceSettings): Promise<InvoiceSettings> {
+  if (mode === 'demo') {
+    demo.settings = { ...settings }
+    return { ...demo.settings }
+  }
+  // The table holds exactly one row, whose id is true.
+  const { data, error } = await getSupabase()
+    .from('invoice_settings')
+    .update(fromSettings(settings))
+    .eq('id', true)
+    .select(SETTINGS_COLUMNS)
+  if (error) throw new Error(`Couldn't save the settings: ${error.message}`)
+  if (!data?.length) throw new Error("Couldn't save the settings: the settings row is missing. Check that migration 0006 is applied.")
+  return toSettings(data[0] as SettingsRow)
 }
 
 // ── Drafts ─────────────────────────────────────────────────────────────────────
@@ -444,6 +488,50 @@ export async function voidInvoice(mode: Mode, id: string, reason: string): Promi
   const { error } = await getSupabase().rpc('void_invoice', { p_id: id, p_reason: reason })
   if (error) throw new Error(`Couldn't void the invoice: ${error.message}`)
   return getInvoice(mode, id)
+}
+
+// ── Issued PDFs ────────────────────────────────────────────────────────────────
+
+/**
+ * Makes the PDF of an issued invoice from its frozen record, stores it in the
+ * bucket and records where. Called straight after issuing, and again by
+ * "Save PDF" if that first attempt failed. Safe to repeat: a file that already
+ * made it to Storage is kept, never replaced.
+ */
+export async function storeIssuedPdf(mode: Mode, inv: Invoice, invoices: Invoice[]): Promise<Invoice> {
+  if (mode === 'demo') throw new Error(DEMO_NO_ISSUE)
+  if (inv.pdfPath) return inv
+
+  const blob = await renderInvoicePdf(renderFromIssued(inv, invoices))
+  const path = `${inv.invoiceNo}.pdf`
+  const { error: uploadError } = await getSupabase().storage
+    .from(PDF_BUCKET)
+    .upload(path, blob, { contentType: 'application/pdf', upsert: false })
+  // "Already exists" means an earlier attempt uploaded the file but didn't get
+  // as far as recording it. That file was made from the same frozen record, so
+  // record it rather than fail.
+  if (uploadError && !/exists|duplicate/i.test(uploadError.message)) {
+    throw new Error(`Couldn't store the PDF for ${inv.invoiceNo}: ${uploadError.message}`)
+  }
+  const { error } = await getSupabase().rpc('attach_invoice_pdf', { p_id: inv.id, p_path: path })
+  if (error) throw new Error(`Couldn't record the PDF for ${inv.invoiceNo}: ${error.message}`)
+  return getInvoice(mode, inv.id)
+}
+
+/**
+ * The PDF of an issued invoice, to open or share. The stored file when there is
+ * one (a link that works for 5 minutes, because the bucket is private);
+ * otherwise, as in demo mode, one made from the frozen record.
+ */
+export async function getIssuedPdf(mode: Mode, inv: Invoice, invoices: Invoice[]): Promise<Blob | string> {
+  if (mode === 'app' && inv.pdfPath) {
+    const { data, error } = await getSupabase().storage
+      .from(PDF_BUCKET)
+      .createSignedUrl(inv.pdfPath, 300)
+    if (error) throw new Error(`Couldn't open the PDF for ${inv.invoiceNo}: ${error.message}`)
+    return data.signedUrl
+  }
+  return renderInvoicePdf(renderFromIssued(inv, invoices))
 }
 
 // ── Relationships between invoices ────────────────────────────────────────────
