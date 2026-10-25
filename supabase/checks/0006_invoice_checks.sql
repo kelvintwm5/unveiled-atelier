@@ -3,8 +3,9 @@
 --
 -- Everything happens inside one transaction that is rolled back at the end, so it
 -- leaves no rows behind and the counter goes back to where it was. A failed check
--- stops the script with an error that says which one; success ends with the notice
--- "Invoice checks passed".
+-- stops the script with an error that says which one. Success ends with one result
+-- row, "Invoice checks passed". (The SQL editor shows only the last statement's
+-- result and doesn't display notices, so the result is a row, not a notice.)
 --
 -- issue_invoice() checks is_app_owner(), so the script makes a throwaway owner and
 -- pretends to be signed in as them (request.jwt.claims is where Supabase puts the
@@ -14,7 +15,6 @@
 begin;
 
 insert into app_owners (email, note) values ('checks@example.invalid', 'rolled back');
-select set_config('request.jwt.claims', '{"email": "checks@example.invalid"}', true);
 
 do $$
 declare
@@ -34,6 +34,7 @@ declare
                                {"label":"Security Deposit (Refundable)","amount":500,"bold":false},
                                {"label":"Amount Payable Now","amount":1000,"bold":true}]';
 begin
+  perform set_config('request.jwt.claims', '{"email": "checks@example.invalid"}', true);
   select next_no into v_start from invoice_counter;
 
   -- ── Year boundary ───────────────────────────────────────────────────────────
@@ -223,8 +224,10 @@ begin
   select next_no into n from invoice_counter;
   if n <> v_start + 3 then raise exception 'counter: expected %, got %', v_start + 3, n; end if;
 
-  raise notice 'Invoice checks passed';
 end;
 $$;
+
+-- Only reached if every check above passed.
+select 'Invoice checks passed' as result;
 
 rollback;
