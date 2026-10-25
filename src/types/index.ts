@@ -153,6 +153,28 @@ export interface Invoice extends InvoiceDraft {
   createdAt: string
 }
 
+// Everything an invoice PDF prints, already worked out. A draft's comes from the
+// form plus today's settings; an issued invoice's only from its frozen fields, so
+// redrawing it reproduces what the client received.
+export interface InvoiceRender {
+  invoiceNo: string          // '' for a draft
+  date: string               // YYYY-MM-DD: the issue date, or today for a draft
+  template: InvoiceTemplate
+  kind: InvoiceKind
+  business: BusinessDetails
+  clientName: string
+  clientEmail: string
+  clientPhone: string
+  pwsDate: string
+  weddingDate: string
+  clientNote: string
+  lines: InvoiceLine[]
+  totals: TotalsRow[]        // the last row is the amount payable now
+  terms: string
+  settles: string            // the deposit invoice number a final settles, or ''
+  replaces: string           // the invoice number this one replaces, or ''
+}
+
 // ── Auth shapes ───────────────────────────────────────────────────────────────
 
 // The app is always in one of three states:
