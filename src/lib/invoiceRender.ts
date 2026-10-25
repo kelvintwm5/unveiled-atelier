@@ -33,7 +33,7 @@ function common(d: InvoiceDraft, invoices: Invoice[]) {
     clientNote:  d.clientNote,
     lines:       d.lines.map(l => ({ ...l })),
     terms:       d.terms,
-    settles:     numberOf(invoices, d.depositInvoiceId) || d.legacyDepositNo.trim(),
+    depositInvoiceNo: numberOf(invoices, d.depositInvoiceId) || d.legacyDepositNo.trim(),
     replaces:    numberOf(invoices, d.replacesInvoiceId),
   }
 }

@@ -262,7 +262,7 @@ function DraftEditor({ mode, id, initial, invoices, clients, settings, onBack, o
 
   const labels   = useMemo(() => clientLabels(clients), [clients])
   const replaces = invoices.find(i => i.id === draft.replacesInvoiceId)
-  // The linked deposit stays selectable even once a final settles it (this one).
+  // The linked deposit stays selectable even once a final (this one) collects its balance.
   const deposits = useMemo(() => {
     const open = depositsAwaitingFinal(invoices)
     const linked = invoices.find(i => i.id === draft.depositInvoiceId)
@@ -457,13 +457,17 @@ function DraftEditor({ mode, id, initial, invoices, clients, settings, onBack, o
             {draft.kind === 'final' && (
               <Section title="Deposit Invoice">
                 <div className="space-y-3">
-                  <Field label="Settles deposit">
+                  <p className="text-xs text-stone-500">
+                    A final invoice collects the rest of a deposit invoice's total. Pick the deposit
+                    to copy its client, dates and line items.
+                  </p>
+                  <Field label="Deposit invoice">
                     <select
                       value={draft.depositInvoiceId}
                       onChange={e => pickDeposit(e.target.value)}
                       className={inputCls}
                     >
-                      <option value="">From before the app, or none</option>
+                      <option value="">Issued before the app, or none</option>
                       {deposits.map(d => (
                         <option key={d.id} value={d.id}>
                           {d.invoiceNo} · {d.clientName} · {formatDate(d.issuedOn)}
@@ -476,7 +480,7 @@ function DraftEditor({ mode, id, initial, invoices, clients, settings, onBack, o
                       Client, dates and line items were copied from the deposit. You can still edit them.
                     </p>
                   ) : (
-                    <Field label="Deposit invoice no. from before the app (optional)">
+                    <Field label="Deposit invoice no. issued before the app (optional)">
                       <input
                         type="text" value={draft.legacyDepositNo}
                         onChange={e => update({ legacyDepositNo: e.target.value })}
@@ -778,8 +782,8 @@ function IssuedInvoice({ mode, invoice, invoices, notice, onBack, onOpen, onChan
           )}
           {(deposit || invoice.legacyDepositNo || replaces) && (
             <div className="text-sm text-stone-600 space-y-1">
-              {deposit && <p>Settles deposit <LinkButton onClick={() => onOpen(deposit)}>{deposit.invoiceNo}</LinkButton></p>}
-              {invoice.legacyDepositNo && <p>Settles deposit {invoice.legacyDepositNo} (from before the app)</p>}
+              {deposit && <p>Deposit invoice <LinkButton onClick={() => onOpen(deposit)}>{deposit.invoiceNo}</LinkButton></p>}
+              {invoice.legacyDepositNo && <p>Deposit invoice {invoice.legacyDepositNo} (issued before the app)</p>}
               {replaces && <p>Replaces <LinkButton onClick={() => onOpen(replaces)}>{replaces.invoiceNo}</LinkButton></p>}
             </div>
           )}

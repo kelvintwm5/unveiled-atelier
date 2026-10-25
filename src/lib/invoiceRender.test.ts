@@ -15,7 +15,7 @@ describe('renderFromIssued', () => {
     expect(r.business.paynow).not.toBe(settingsNow.paynow)
     expect(r.invoiceNo).toBe('UA-2025-1802')
     expect(r.date).toBe('2025-05-28')
-    expect(r.settles).toBe('UA-2025-1801')
+    expect(r.depositInvoiceNo).toBe('UA-2025-1801')
   })
 
   it('refuses a draft', () => {
@@ -38,6 +38,6 @@ describe('renderFromDraft', () => {
       { ...deposit, kind: 'final', depositInvoiceId: '', legacyDepositNo: ' UA-2026-1815 ' },
       DEMO_INVOICE_SETTINGS, '2026-10-25', DEMO_INVOICES,
     )
-    expect(r.settles).toBe('UA-2026-1815')
+    expect(r.depositInvoiceNo).toBe('UA-2026-1815')
   })
 })

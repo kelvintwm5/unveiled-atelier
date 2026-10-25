@@ -536,12 +536,12 @@ export async function getIssuedPdf(mode: Mode, inv: Invoice, invoices: Invoice[]
 
 // ── Relationships between invoices ────────────────────────────────────────────
 
-/** Issued deposits that no issued final settles yet, newest first. */
+/** Issued deposits that no issued final has collected the balance of yet, newest first. */
 export function depositsAwaitingFinal(invoices: Invoice[]): Invoice[] {
-  const settled = new Set(
+  const haveFinal = new Set(
     invoices.filter(i => i.kind === 'final' && i.status === 'issued').map(i => i.depositInvoiceId),
   )
-  return invoices.filter(i => i.kind === 'deposit' && i.status === 'issued' && !settled.has(i.id))
+  return invoices.filter(i => i.kind === 'deposit' && i.status === 'issued' && !haveFinal.has(i.id))
 }
 
 /** The invoice that replaced this one (issued) or will replace it (draft), if any. */

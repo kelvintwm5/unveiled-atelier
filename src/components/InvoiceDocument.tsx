@@ -117,7 +117,7 @@ export default function InvoiceDocument({ data }: { data: InvoiceRender }) {
             <Text style={s.meta}>
               {data.template === 'rental' ? 'Rental' : 'Bespoke'} · {data.kind === 'deposit' ? 'Booking deposit' : 'Final payment'}
             </Text>
-            {data.settles ? <Text style={s.meta}>Settles {data.settles}</Text> : null}
+            {data.depositInvoiceNo ? <Text style={s.meta}>Deposit invoice: {data.depositInvoiceNo}</Text> : null}
             {data.replaces ? <Text style={s.meta}>Replaces {data.replaces}</Text> : null}
           </View>
         </View>

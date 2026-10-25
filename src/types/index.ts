@@ -113,7 +113,7 @@ export interface InvoiceDraft {
   weddingDate: string        // YYYY-MM-DD or ''
   clientNote: string
   terms: string
-  depositInvoiceId: string   // final only: the issued deposit invoice it settles, or ''
+  depositInvoiceId: string   // final only: the issued deposit invoice whose balance it collects, or ''
   legacyDepositNo: string    // final only: a deposit number from before the app, or ''
   replacesInvoiceId: string  // set on a draft that will replace an issued invoice, or ''
   lines: InvoiceLine[]
@@ -171,7 +171,7 @@ export interface InvoiceRender {
   lines: InvoiceLine[]
   totals: TotalsRow[]        // the last row is the amount payable now
   terms: string
-  settles: string            // the deposit invoice number a final settles, or ''
+  depositInvoiceNo: string   // on a final: its deposit invoice's number, or ''
   replaces: string           // the invoice number this one replaces, or ''
 }
 
