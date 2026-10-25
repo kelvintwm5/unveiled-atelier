@@ -78,6 +78,103 @@ export interface ClientActivity {
 export type NewClient = Omit<Client, 'id'>
 export type NewActivity = Omit<ClientActivity, 'id'>
 
+// ── Invoice shapes ────────────────────────────────────────────────────────────
+
+// Must match the check constraints in supabase/migrations/0006_invoices.sql.
+export type InvoiceTemplate = 'rental' | 'bespoke'
+export type InvoiceKind = 'deposit' | 'final'
+export type InvoiceStatus = 'draft' | 'issued' | 'void'
+
+export interface InvoiceLine {
+  title: string
+  description: string    // plain text; lines starting with "- " print as bullets
+  quantity: number       // whole units, at least 1
+  unitAmount: number     // SGD per unit; the line total is quantity × unitAmount
+}
+
+// One row of the totals block under the line items. The last row is the amount
+// payable now.
+export interface TotalsRow {
+  label: string
+  amount: number         // SGD
+  bold: boolean
+}
+
+// What the invoice editor edits. Every field is copied onto the invoice, so later
+// changes to the client record or the settings never alter an issued invoice.
+export interface InvoiceDraft {
+  template: InvoiceTemplate
+  kind: InvoiceKind
+  clientId: string           // Client.id, or '' when not linked to the tracker
+  clientName: string
+  clientEmail: string
+  clientPhone: string
+  pwsDate: string            // YYYY-MM-DD or ''
+  weddingDate: string        // YYYY-MM-DD or ''
+  clientNote: string
+  terms: string
+  depositInvoiceId: string   // final only: the issued deposit invoice whose balance it collects, or ''
+  legacyDepositNo: string    // final only: a deposit number from before the app, or ''
+  replacesInvoiceId: string  // set on a draft that will replace an issued invoice, or ''
+  lines: InvoiceLine[]
+}
+
+// The business details printed on an invoice, as they were when it was issued.
+export interface BusinessDetails {
+  businessName: string
+  address: string
+  email: string
+  phone: string
+  paynow: string
+  bankName: string
+  bankAccountName: string
+  bankAccountNo: string
+}
+
+export interface InvoiceSettings extends BusinessDetails {
+  defaultTermsRental: string
+  defaultTermsBespoke: string
+}
+
+// Fields after the draft ones are set by the database when the invoice is issued
+// (or voided), and are '' / null / 0 on a draft.
+export interface Invoice extends InvoiceDraft {
+  id: string
+  status: InvoiceStatus
+  invoiceNo: string          // UA-YYYY-NNNN, '' on a draft
+  issuedOn: string           // YYYY-MM-DD in Singapore, '' on a draft
+  subtotal: number | null
+  amountPayable: number | null
+  totals: TotalsRow[] | null
+  business: BusinessDetails | null
+  pdfPath: string
+  voidedAt: string           // ISO timestamp, '' unless void
+  voidReason: string
+  createdAt: string
+}
+
+// Everything an invoice PDF prints, already worked out. A draft's comes from the
+// form plus today's settings; an issued invoice's only from its frozen fields, so
+// redrawing it reproduces what the client received.
+export interface InvoiceRender {
+  invoiceNo: string          // '' for a draft
+  date: string               // YYYY-MM-DD: the issue date, or today for a draft
+  template: InvoiceTemplate
+  kind: InvoiceKind
+  business: BusinessDetails
+  clientName: string
+  clientEmail: string
+  clientPhone: string
+  pwsDate: string
+  weddingDate: string
+  clientNote: string
+  lines: InvoiceLine[]
+  totals: TotalsRow[]        // the last row is the amount payable now
+  terms: string
+  depositInvoiceNo: string   // on a final: its deposit invoice's number, or ''
+  replaces: string           // the invoice number this one replaces, or ''
+}
+
 // ── Auth shapes ───────────────────────────────────────────────────────────────
 
 // The app is always in one of three states:

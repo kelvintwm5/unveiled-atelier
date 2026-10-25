@@ -48,7 +48,7 @@ abstractions (orgs, workspaces, per-user sheets).
 |------------|----------------------------------------------------------------------------|
 | UI         | React 18, Vite 5, TypeScript (strict), Tailwind CSS 3. SPA; `AppShell` switches views (no router) |
 | Data       | Supabase: Postgres, Auth (Google provider), Row Level Security, Storage (issued invoice PDFs) |
-| PDFs       | `@react-pdf/renderer`: the same React components draw the live preview and the PDF |
+| PDFs       | `@react-pdf/renderer`: the same React component (`src/components/InvoiceDocument.tsx`) draws the preview and the PDF. It is ~450 KB gzipped, so it's loaded on demand only through `src/lib/invoicePdf.ts`; never import it statically |
 | Server     | Vercel serverless functions in `api/`                                      |
 | AI         | `@anthropic-ai/sdk`, called only from `api/`                               |
 | Hosting    | Vercel. Every push to `main` auto-deploys to production                    |
@@ -79,11 +79,14 @@ npm install
 npm run dev      # Vite on :5173. /api routes do NOT run here
 vercel dev       # Vite plus /api functions; needed for chat
 npm run build    # tsc + vite build
+npm test         # Vitest, for the pure domain modules in src/lib
 ```
 
 - `tsconfig.json` includes only `src/`, so `npm run build` does **not** type-check `api/`.
-- There's no test runner or linter yet. If you add domain logic (money, invoice
-  totals, tax lines), add tests and the runner they need. Raise this in the PR.
+- Tests use Vitest and sit next to the module they test (`src/lib/xxx.test.ts`).
+  Domain logic (money, invoice totals, tax lines) gets tests. There's no linter yet.
+- SQL changes get a rolled-back check script in `supabase/checks/` (see
+  `0006_invoice_checks.sql`), run by hand in the SQL editor after the migration.
 
 ## Architecture principles
 
@@ -118,6 +121,9 @@ npm run build    # tsc + vite build
    `supabase/migrations/`. Never edit a migration that has already been applied, and
    never change the schema in the Supabase dashboard without capturing the change in
    a migration.
+   Every `UPDATE` and `DELETE` needs a `WHERE`, even in a function and even on a
+   one-row table (`where id`): Supabase's API runs pg-safeupdate, which rejects them
+   otherwise. The SQL editor and local tests don't, so they won't catch it (see 0007).
 8. **Stay small.** One owner, low volume. Prefer plain functions and SQL to new
    libraries. A new dependency needs a stated reason.
 
@@ -132,13 +138,18 @@ npm run build    # tsc + vite build
   a name.
 - **Invoice numbers:** `UA-YYYY-NNNN`. NNNN is one counter that started at 1800 and
   keeps counting across years (it doesn't reset each year). YYYY is the issue year in
-  SGT. Numbers must never repeat.
+  SGT. Numbers must never repeat. The last number issued from the Google Sheet was
+  UA-2026-1820, so the database counter (`invoice_counter`, 0006) starts at 1821.
+  Only `issue_invoice()` assigns numbers.
 - **Invoice kinds:** template `rental` | `bespoke`, type `deposit` | `final`.
   - Deposit: subtotal, 50% booking deposit, amount payable = 50%.
   - Final (bespoke): remaining 50%.
   - Final (rental): remaining 50% plus a refundable security deposit equal to that
     50%, so the amount payable equals the subtotal.
-  - The current implementation is `buildTotalsRows` in `src/lib/invoices.ts`.
+  - The booking deposit is 50% rounded to the cent; the remaining balance is the
+    subtotal minus that deposit, so the two invoices always add up to the subtotal.
+  - The one implementation is `buildTotalsRows` in `src/lib/invoiceTotals.ts`, with
+    tests. `issue_invoice()` stores its rows and checks the subtotal against the lines.
 - **Invoice lifecycle:** `draft → issued → void`.
   - Draft PDFs carry a "DRAFT" watermark and no number.
   - The issued PDF is uploaded to Supabase Storage. It is the record of what the
