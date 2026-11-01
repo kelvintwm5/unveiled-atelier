@@ -3,7 +3,8 @@
 // kept here so portfolio visitors can explore the full UI without signing in.
 
 import type {
-  Transaction, IrasSummary, MonthlySummary, PnlTotals, Client, ClientActivity, Invoice, InvoiceSettings,
+  Transaction, IrasSummary, MonthlySummary, PnlTotals, Client, ClientActivity, Invoice, InvoiceClause,
+  InvoiceSettings,
 } from '../types'
 
 // Fixed ids, so React keys stay stable. Demo data never reaches the database.
@@ -318,4 +319,13 @@ export const DEMO_INVOICES: Invoice[] = [
     business: DEMO_BUSINESS,
     createdAt: '2025-01-03T09:30:00+08:00',
   },
+]
+
+export const DEMO_CLAUSES: InvoiceClause[] = [
+  { id: '00000000-0000-4000-b000-000000000001', title: 'Cleaning included',
+    body: '- Professional steam cleaning after return is included.' },
+  { id: '00000000-0000-4000-b000-000000000002', title: 'Late return fee',
+    body: '- Late returns are charged S$20 per day.' },
+  { id: '00000000-0000-4000-b000-000000000003', title: 'Design proposal reference',
+    body: 'Design as outlined in the proposal dated [date].' },
 ]

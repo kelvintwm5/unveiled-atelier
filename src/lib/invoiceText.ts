@@ -18,3 +18,13 @@ export function parseText(text: string): TextBlock[] {
       return { bullet, text: bullet ? line.replace(/^\s*- /, '') : line }
     })
 }
+
+/**
+ * Adds a clause to the end of some text, on its own line. Appending (rather than
+ * inserting at the cursor) behaves the same on a phone, where the cursor is hard
+ * to place.
+ */
+export function appendText(text: string, addition: string): string {
+  const base = text.replace(/\s+$/, '')
+  return base ? `${base}\n${addition}` : addition
+}
