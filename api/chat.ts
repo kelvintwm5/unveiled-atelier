@@ -1,4 +1,4 @@
-import type { VercelRequest, VercelResponse } from '@vercel/node'
+import type { IncomingMessage, ServerResponse } from 'node:http'
 import Anthropic from '@anthropic-ai/sdk'
 import { createClient } from '@supabase/supabase-js'
 // The .js extension is required: this function runs as a Node ES module, which
@@ -10,6 +10,16 @@ import { clientChatContext, type ChatActivity, type ChatClient } from '../src/li
 import {
   financeChatContext, type ChatMonth, type ChatTransaction, type ChatYear,
 } from '../src/lib/financeChatContext.js'
+
+// Vercel's Node runtime hands us Node's own request and response with a few
+// helpers added. These types describe only the helpers this handler uses.
+// The official types live in @vercel/node, but that package is Vercel's whole
+// build toolchain, with its own pinned dependencies, installed for two types.
+type ApiRequest = IncomingMessage & { body?: unknown }
+type ApiResponse = ServerResponse & {
+  status(code: number): ApiResponse
+  json(body: unknown): ApiResponse
+}
 
 const client = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY })
 
@@ -140,7 +150,7 @@ function arrayOf<T>(value: unknown): T[] {
   return Array.isArray(value) ? value as T[] : []
 }
 
-export default async function handler(req: VercelRequest, res: VercelResponse) {
+export default async function handler(req: ApiRequest, res: ApiResponse) {
   if (req.method !== 'POST') {
     return res.status(405).json({ error: 'Method not allowed' })
   }
@@ -152,7 +162,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   }
 
   // Everything below trusts nothing about the body until it has been checked.
-  const body: Record<string, unknown> = req.body && typeof req.body === 'object' ? req.body : {}
+  const body = (req.body && typeof req.body === 'object' ? req.body : {}) as Record<string, unknown>
 
   // A request with a token claims to be the owner and must prove it. One without
   // is a demo visitor and gets demo data and demo limits, whatever it sends.
