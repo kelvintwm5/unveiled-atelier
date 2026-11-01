@@ -24,3 +24,15 @@ export function addDays(date: string, days: number): string {
   d.setUTCDate(d.getUTCDate() + days)
   return d.toISOString().slice(0, 10)
 }
+
+const displayDate = new Intl.DateTimeFormat('en-GB', {
+  timeZone: 'UTC',
+  day: '2-digit',
+  month: 'short',
+  year: 'numeric',
+})
+
+/** '2026-04-10' → '10 Apr 2026', as printed on invoices. '' stays ''. */
+export function formatDate(date: string): string {
+  return date ? displayDate.format(new Date(`${date}T00:00:00Z`)) : ''
+}

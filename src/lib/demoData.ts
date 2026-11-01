@@ -2,7 +2,9 @@
 // This is the same dataset that was written to the Google Sheet by create_sheet.py,
 // kept here so portfolio visitors can explore the full UI without signing in.
 
-import type { Transaction, IrasSummary, MonthlySummary, PnlTotals, Client, ClientActivity } from '../types'
+import type {
+  Transaction, IrasSummary, MonthlySummary, PnlTotals, Client, ClientActivity, Invoice, InvoiceSettings,
+} from '../types'
 
 // Fixed ids, so React keys stay stable. Demo data never reaches the database.
 export const DEMO_TRANSACTIONS: Transaction[] = [
@@ -202,5 +204,118 @@ export const DEMO_ACTIVITIES: ClientActivity[] = [
     type: 'In-Person',
     notes: 'First consultation. Showed rental samples. Budget is S$150–200.',
     nextFollowUp: '2025-01-10',
+  },
+]
+
+// ── Invoices ──────────────────────────────────────────────────────────────────
+
+// Fictional business details, so demo previews show where the real ones go.
+export const DEMO_INVOICE_SETTINGS: InvoiceSettings = {
+  businessName:        'Unveiled Atelier (demo)',
+  address:             '1 Example Road, #01-01\nSingapore 000000',
+  email:               'hello@example.com',
+  phone:               '+65 0000 0000',
+  paynow:              'Demo only, not a real UEN',
+  bankName:            'Example Bank',
+  bankAccountName:     'Unveiled Atelier',
+  bankAccountNo:       '000-000000-0',
+  defaultTermsRental:  '- The booking deposit secures your date and is non-refundable.\n- The security deposit is refunded within 7 days of the veil\'s return in good condition.\n- Please return the veil within 3 days after your wedding.',
+  defaultTermsBespoke: '- The booking deposit starts work on your veil and is non-refundable.\n- The balance is due at the final fitting.\n- Design changes after the second fitting may be charged.',
+}
+
+const DEMO_BUSINESS = {
+  businessName: DEMO_INVOICE_SETTINGS.businessName, address: DEMO_INVOICE_SETTINGS.address,
+  email: DEMO_INVOICE_SETTINGS.email, phone: DEMO_INVOICE_SETTINGS.phone, paynow: DEMO_INVOICE_SETTINGS.paynow,
+  bankName: DEMO_INVOICE_SETTINGS.bankName, bankAccountName: DEMO_INVOICE_SETTINGS.bankAccountName,
+  bankAccountNo: DEMO_INVOICE_SETTINGS.bankAccountNo,
+}
+
+const DEMO_INVOICE_BLANKS = {
+  clientNote: '', legacyDepositNo: '', replacesInvoiceId: '', pdfPath: '', voidedAt: '', voidReason: '',
+}
+
+// Totals match what buildTotalsRows() in invoiceTotals.ts gives for each subtotal.
+export const DEMO_INVOICES: Invoice[] = [
+  {
+    ...DEMO_INVOICE_BLANKS,
+    id: '00000000-0000-4000-a000-000000000004',
+    status: 'draft', template: 'rental', kind: 'deposit',
+    clientId: DEMO_CLIENT_IDS['Jessica Lim'], clientName: 'Jessica Lim',
+    clientEmail: 'jess.lim@gmail.com', clientPhone: '+65 8456 7890',
+    pwsDate: '', weddingDate: '2025-07-19',
+    terms: DEMO_INVOICE_SETTINGS.defaultTermsRental,
+    depositInvoiceId: '',
+    lines: [
+      { title: 'Lace-edged veil rental', description: 'Chapel length, ivory.', quantity: 1, unitAmount: 180 },
+    ],
+    invoiceNo: '', issuedOn: '', subtotal: null, amountPayable: null, totals: null, business: null,
+    createdAt: '2025-05-02T10:00:00+08:00',
+  },
+  {
+    ...DEMO_INVOICE_BLANKS,
+    id: '00000000-0000-4000-a000-000000000003',
+    status: 'issued', template: 'bespoke', kind: 'deposit',
+    clientId: DEMO_CLIENT_IDS['Rachel Tan'], clientName: 'Rachel Tan',
+    clientEmail: 'rachel.tan@gmail.com', clientPhone: '+65 9123 4567',
+    pwsDate: '2025-02-15', weddingDate: '2025-04-12',
+    clientNote: 'Design as discussed at the consultation on 3 Jan.',
+    terms: DEMO_INVOICE_SETTINGS.defaultTermsBespoke,
+    depositInvoiceId: '',
+    lines: [
+      { title: 'Bespoke cathedral veil', description: '- Hand-applied French lace border\n- Scattered pearls', quantity: 1, unitAmount: 1650 },
+      { title: 'Blusher layer', description: '', quantity: 1, unitAmount: 150 },
+    ],
+    invoiceNo: 'UA-2025-1803', issuedOn: '2025-01-06', subtotal: 1800, amountPayable: 900,
+    totals: [
+      { label: 'Subtotal',                       amount: 1800, bold: false },
+      { label: 'Booking Deposit Required (50%)', amount: 900,  bold: false },
+      { label: 'Amount Payable Now',             amount: 900,  bold: true  },
+    ],
+    business: DEMO_BUSINESS,
+    createdAt: '2025-01-06T11:00:00+08:00',
+  },
+  {
+    ...DEMO_INVOICE_BLANKS,
+    id: '00000000-0000-4000-a000-000000000002',
+    status: 'issued', template: 'rental', kind: 'final',
+    clientId: DEMO_CLIENT_IDS['Priya Nair'], clientName: 'Priya Nair',
+    clientEmail: 'priya.n@hotmail.com', clientPhone: '+65 8234 5678',
+    pwsDate: '', weddingDate: '2025-06-07',
+    terms: DEMO_INVOICE_SETTINGS.defaultTermsRental,
+    depositInvoiceId: '00000000-0000-4000-a000-000000000001',
+    lines: [
+      { title: 'Pearl-trim veil rental', description: 'Fingertip length.', quantity: 1, unitAmount: 200 },
+      { title: 'Hair comb', description: '', quantity: 2, unitAmount: 20 },
+    ],
+    invoiceNo: 'UA-2025-1802', issuedOn: '2025-05-28', subtotal: 240, amountPayable: 240,
+    totals: [
+      { label: 'Remaining Balance (50%)',       amount: 120, bold: false },
+      { label: 'Security Deposit (Refundable)', amount: 120, bold: false },
+      { label: 'Amount Payable Now',            amount: 240, bold: true  },
+    ],
+    business: DEMO_BUSINESS,
+    createdAt: '2025-05-28T15:00:00+08:00',
+  },
+  {
+    ...DEMO_INVOICE_BLANKS,
+    id: '00000000-0000-4000-a000-000000000001',
+    status: 'issued', template: 'rental', kind: 'deposit',
+    clientId: DEMO_CLIENT_IDS['Priya Nair'], clientName: 'Priya Nair',
+    clientEmail: 'priya.n@hotmail.com', clientPhone: '+65 8234 5678',
+    pwsDate: '', weddingDate: '2025-06-07',
+    terms: DEMO_INVOICE_SETTINGS.defaultTermsRental,
+    depositInvoiceId: '',
+    lines: [
+      { title: 'Pearl-trim veil rental', description: 'Fingertip length.', quantity: 1, unitAmount: 200 },
+      { title: 'Hair comb', description: '', quantity: 2, unitAmount: 20 },
+    ],
+    invoiceNo: 'UA-2025-1801', issuedOn: '2025-01-03', subtotal: 240, amountPayable: 120,
+    totals: [
+      { label: 'Subtotal',                       amount: 240, bold: false },
+      { label: 'Booking Deposit Required (50%)', amount: 120, bold: false },
+      { label: 'Amount Payable Now',             amount: 120, bold: true  },
+    ],
+    business: DEMO_BUSINESS,
+    createdAt: '2025-01-03T09:30:00+08:00',
   },
 ]

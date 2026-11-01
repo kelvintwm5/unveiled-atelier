@@ -1,5 +1,4 @@
 import { useState } from 'react'
-import { signInWithGoogle } from '../lib/supabase'
 import Sidebar from '../components/Sidebar'
 import TransactionsView from '../views/TransactionsView'
 import ChatView from '../views/ChatView'
@@ -129,11 +128,7 @@ const MOBILE_NAV: { id: View; label: string; icon: JSX.Element }[] = [
 export default function AppShell({ auth, onSignOut }: AppShellProps) {
   const [activeView, setActiveView] = useState<View>('transactions')
 
-  const mode        = auth.mode
-  // Only the legacy invoice view still calls Google (Sheets, Docs, Drive) with
-  // this token. Everything else reads Supabase with the Supabase session.
-  const accessToken = auth.mode === 'app' ? auth.googleToken ?? undefined : undefined
-  const googleExpired = auth.mode === 'app' && !auth.googleToken
+  const mode = auth.mode
 
   return (
     <div className="flex h-[100dvh] bg-stone-50 overflow-hidden">
@@ -183,14 +178,12 @@ export default function AppShell({ auth, onSignOut }: AppShellProps) {
           </div>
         </div>
 
-        {googleExpired && <ReconnectGoogleBanner />}
-
         <main className="flex-1 overflow-hidden min-h-0">
           {activeView === 'transactions'     && <TransactionsView mode={mode} />}
           {activeView === 'chat'             && <ChatView mode={mode} />}
           {activeView === 'monthly'          && <MonthlySummaryView mode={mode} />}
           {activeView === 'tax'              && <TaxSummaryView mode={mode} />}
-          {activeView === 'invoices'         && <InvoiceView mode={mode} accessToken={accessToken} />}
+          {activeView === 'invoices'         && <InvoiceView mode={mode} />}
           {activeView === 'pricing'          && <PricingView />}
           {activeView === 'client-dashboard' && <ClientDashboardView mode={mode} />}
           {activeView === 'pipeline'         && <PipelineView mode={mode} />}
@@ -229,43 +222,6 @@ export default function AppShell({ auth, onSignOut }: AppShellProps) {
 
       </div>
 
-    </div>
-  )
-}
-
-// Supabase passes Google's token through only once, at sign-in, and drops it on
-// the next session refresh (about an hour later, when it would expire anyway).
-// Reconnecting re-runs the Google redirect; with consent already given it's one tap.
-// Goes away with the Google invoice code.
-function ReconnectGoogleBanner() {
-  const [busy, setBusy] = useState(false)
-  const [error, setError] = useState<string | null>(null)
-
-  async function reconnect() {
-    setBusy(true)
-    setError(null)
-    try {
-      await signInWithGoogle()
-    } catch (err) {
-      setBusy(false)
-      setError(err instanceof Error ? err.message : String(err))
-    }
-  }
-
-  return (
-    <div className="bg-rose-50 border-b border-rose-200 px-4 py-2.5 flex flex-wrap items-center gap-x-3 gap-y-2 shrink-0">
-      <p className="text-rose-900 text-sm flex-1 min-w-[12rem]">
-        Google access has expired. Invoices need a quick reconnect.
-        {error && <span className="block text-red-700 text-xs mt-1">{error}</span>}
-      </p>
-      <button
-        onClick={reconnect}
-        disabled={busy}
-        className="bg-rose-800 hover:bg-rose-900 text-white text-sm font-medium px-3 py-1.5 rounded-lg
-                   transition-colors disabled:opacity-60 disabled:cursor-not-allowed"
-      >
-        {busy ? 'Redirecting…' : 'Reconnect Google'}
-      </button>
     </div>
   )
 }
