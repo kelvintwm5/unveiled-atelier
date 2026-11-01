@@ -193,9 +193,7 @@ export interface InvoiceRender {
 //   app       → owner signed in to Supabase with Google
 export type AuthMode = 'landing' | 'demo' | 'app'
 
-// googleToken is Google's access token for the legacy Sheets/Docs code, not the
-// Supabase session token. It is null once it has expired (see OwnerSession).
 export type AuthState =
   | { mode: 'landing' }
   | { mode: 'demo' }
-  | { mode: 'app'; email: string; googleToken: string | null }
+  | { mode: 'app'; email: string }
