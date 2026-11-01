@@ -48,7 +48,7 @@ abstractions (orgs, workspaces, per-user sheets).
 |------------|----------------------------------------------------------------------------|
 | UI         | React 18, Vite 5, TypeScript (strict), Tailwind CSS 3. SPA; `AppShell` switches views (no router) |
 | Data       | Supabase: Postgres, Auth (Google provider), Row Level Security, Storage (issued invoice PDFs) |
-| PDFs       | `@react-pdf/renderer`: the same React components draw the live preview and the PDF |
+| PDFs       | `@react-pdf/renderer`: the same React component (`src/components/InvoiceDocument.tsx`) draws the preview and the PDF. It is ~450 KB gzipped, so it's loaded on demand only through `src/lib/invoicePdf.ts`; never import it statically |
 | Server     | Vercel serverless functions in `api/`                                      |
 | AI         | `@anthropic-ai/sdk`, called only from `api/`                               |
 | Hosting    | Vercel. Every push to `main` auto-deploys to production                    |

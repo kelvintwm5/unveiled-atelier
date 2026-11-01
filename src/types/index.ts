@@ -113,7 +113,7 @@ export interface InvoiceDraft {
   weddingDate: string        // YYYY-MM-DD or ''
   clientNote: string
   terms: string
-  depositInvoiceId: string   // final only: the issued deposit invoice it settles, or ''
+  depositInvoiceId: string   // final only: the issued deposit invoice whose balance it collects, or ''
   legacyDepositNo: string    // final only: a deposit number from before the app, or ''
   replacesInvoiceId: string  // set on a draft that will replace an issued invoice, or ''
   lines: InvoiceLine[]
@@ -151,6 +151,28 @@ export interface Invoice extends InvoiceDraft {
   voidedAt: string           // ISO timestamp, '' unless void
   voidReason: string
   createdAt: string
+}
+
+// Everything an invoice PDF prints, already worked out. A draft's comes from the
+// form plus today's settings; an issued invoice's only from its frozen fields, so
+// redrawing it reproduces what the client received.
+export interface InvoiceRender {
+  invoiceNo: string          // '' for a draft
+  date: string               // YYYY-MM-DD: the issue date, or today for a draft
+  template: InvoiceTemplate
+  kind: InvoiceKind
+  business: BusinessDetails
+  clientName: string
+  clientEmail: string
+  clientPhone: string
+  pwsDate: string
+  weddingDate: string
+  clientNote: string
+  lines: InvoiceLine[]
+  totals: TotalsRow[]        // the last row is the amount payable now
+  terms: string
+  depositInvoiceNo: string   // on a final: its deposit invoice's number, or ''
+  replaces: string           // the invoice number this one replaces, or ''
 }
 
 // ── Auth shapes ───────────────────────────────────────────────────────────────
