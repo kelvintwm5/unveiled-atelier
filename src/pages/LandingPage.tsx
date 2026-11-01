@@ -15,8 +15,8 @@ const FEATURES = [
           d="M9 17v-2m3 2v-4m3 4v-6m2 10H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
       </svg>
     ),
-    title: 'Live from Google Sheets',
-    body:  'Your transactions and totals sync directly from your own spreadsheet.',
+    title: 'Invoices, clients and the books',
+    body:  'Issue numbered PDF invoices, follow up with clients and keep the P&L in one place.',
   },
   {
     icon: (
@@ -66,14 +66,14 @@ export default function LandingPage({ onDemo, initialError }: LandingPageProps) 
         {/* Brand */}
         <div className="text-center mb-10">
           <p className="text-stone-500 text-xs tracking-widest uppercase mb-3">
-            Financial Dashboard
+            Back Office
           </p>
           <h1 className="text-white text-4xl font-semibold tracking-tight">
             Unveiled Atelier
           </h1>
           <p className="text-stone-400 text-base mt-3 leading-relaxed">
-            A clean financial dashboard for your bridal business,<br />
-            powered by Google Sheets.
+            A clean back office for your bridal business,<br />
+            from first enquiry to the IRAS statement.
           </p>
         </div>
 
@@ -129,8 +129,8 @@ export default function LandingPage({ onDemo, initialError }: LandingPageProps) 
 
         {/* Privacy note */}
         <p className="text-stone-600 text-xs text-center mt-8 leading-relaxed">
-          Owner sign-in uses Google and grants this app access<br />
-          to the business's Google Sheets and invoice documents.
+          Owner sign-in uses Google only to confirm who you are.<br />
+          The app can't see your Google Drive, Docs or Sheets.
         </p>
 
       </div>

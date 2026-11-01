@@ -23,24 +23,16 @@ There are two audiences, and both must keep working:
 The app is single-tenant: one business, one or two users. Don't add multi-tenant
 abstractions (orgs, workspaces, per-user sheets).
 
-## Current state: moving from Google Sheets to Supabase
+## History: from Google Sheets to Supabase
 
-- **Target:** Supabase Postgres is the system of record for invoices, transactions
-  (P&L), and clients/activities. It starts empty. There is no import of the old
-  Sheets data.
-- **Legacy:** `src/lib/sheets.ts`, `src/lib/clientData.ts`, and the logging/numbering
-  half of `src/lib/invoices.ts` read and write a Google Sheet through the user's
-  Google OAuth token. They are being replaced one module at a time.
-- **Rules during the move:**
-  - Don't add new Google Sheets reads or writes.
-  - When a module moves to Supabase, delete its Sheets code in the same change. Don't
-    leave the two running side by side.
-  - Invoices will be generated as PDFs in the app (see "Decisions"). The Google
-    Docs/Drive generation code in `src/lib/invoices.ts` is legacy and goes away
-    together with the Sheets code.
-  - Once no Sheets, Docs or Drive code is left, remove `GOOGLE_API_SCOPES` from
-    `src/lib/supabase.ts`. Google sign-in then needs only the basic profile and email
-    scopes.
+- The app used to read and write a Google Sheet, and made invoices as Google Docs,
+  through the owner's Google token. Every module has since moved to Supabase
+  Postgres, which is the system of record. The old Sheet's data was not imported.
+- Google is now only the sign-in provider. Sign-in requests no extra scopes, so the
+  app has no access to Drive, Docs or Sheets. Keep it that way: don't add Google
+  API calls or scopes. A feature that needs one is a decision for Kelvin first.
+- Records from before the move (transactions, clients, invoices up to UA-2026-1820)
+  exist only in the old Sheet.
 
 ## Stack
 
@@ -62,14 +54,14 @@ src/
   App.tsx               Auth state machine: landing | demo | app
   pages/                LandingPage, AppShell (layout + view switching)
   views/                One screen per file: XxxView.tsx
-  components/           Shared UI (Sidebar)
+  components/           Shared UI (Sidebar, InvoiceDocument for the PDF)
   lib/                  Data access and domain logic, one module per domain
-    supabase.ts         Supabase client + Google sign-in
+    supabase.ts         Supabase client + Google sign-in (identity only)
     demoData.ts         Demo fixtures
   types/index.ts        Shared TypeScript types
 supabase/migrations/    Numbered SQL migrations (NNNN_description.sql)
-create_sheet.py,        Legacy one-off scripts that built the Google Sheet. Not part
-bridal_budget.py        of the app. Remove once the Sheets code is gone.
+supabase/checks/        Rolled-back SQL assertion scripts, run by hand after a migration
+public/fonts/           Fonts for the invoice PDF (OFL licences alongside)
 ```
 
 ## Commands
@@ -218,14 +210,14 @@ Ask before you:
 - add a dependency
 - change auth or RLS
 - write a destructive migration (drop, rename, change a column type)
-- do anything that touches live data or real Google Drive files
+- do anything that touches live data
 - push to `main`, because that deploys to production
 
 ## Never
 
 - Commit `.env`, `credentials.json`, or `token.json`.
 - Put the `service_role` key or `ANTHROPIC_API_KEY` in a `VITE_` variable.
-- Add new Google Sheets reads or writes.
+- Call Google APIs or request Google scopes beyond sign-in.
 - Disable RLS or add a permissive `using (true)` policy to make something work.
 
 ## Decisions

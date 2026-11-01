@@ -19,8 +19,8 @@ export function getSupabase(): SupabaseClient {
   client = createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
     auth: {
       // PKCE brings back a one-time code in the URL instead of the tokens
-      // themselves. The default (implicit) puts the session and the Google token
-      // in the URL hash, where they end up in browser history.
+      // themselves. The default (implicit) puts the session in the URL hash, where
+      // it ends up in browser history.
       flowType: 'pkce',
       // Google returns to the app via a full-page redirect, so the session has to
       // be picked back up from the URL and persisted across reloads.
@@ -34,28 +34,18 @@ export function getSupabase(): SupabaseClient {
 
 const isConfigured = Boolean(SUPABASE_URL && SUPABASE_ANON_KEY)
 
-// Scopes for the Google APIs the legacy invoice code still calls directly (Sheets
-// for invoice numbering and the invoice log, Drive + Docs for generation). Supabase hands
-// this token back once, as session.provider_token. Remove these scopes when the
-// last Sheets/Docs/Drive code is gone.
-export const GOOGLE_API_SCOPES = [
-  'https://www.googleapis.com/auth/spreadsheets',
-  'https://www.googleapis.com/auth/drive',
-  'https://www.googleapis.com/auth/documents',
-].join(' ')
-
 /**
  * Sends the browser to Google, then back to this origin via Supabase.
  * On success the page navigates away, so the returned promise rarely matters.
  *
- * No access_type=offline: nothing server-side uses a Google refresh token, and
- * supabase-js would otherwise keep one (with full Drive access) in localStorage.
+ * Google is only used to prove who is signing in. No extra scopes are requested,
+ * so Google asks for nothing beyond name, email and profile picture, and the app
+ * gets no access to Esther's Drive, Docs or Sheets. Everything else is in Supabase.
  */
 export async function signInWithGoogle(): Promise<void> {
   const { error } = await getSupabase().auth.signInWithOAuth({
     provider: 'google',
     options: {
-      scopes: GOOGLE_API_SCOPES,
       redirectTo: window.location.origin,
     },
   })
@@ -70,10 +60,6 @@ export async function signOut(): Promise<void> {
 
 export interface OwnerSession {
   email: string
-  // Google's access token for the legacy Sheets/Docs code. Supabase never
-  // refreshes it: the next refresh of the Supabase session (about hourly, the same
-  // lifetime as the Google token) drops it. null means "reconnect Google".
-  googleToken: string | null
 }
 
 /**
@@ -88,9 +74,7 @@ export function onOwnerSessionChange(cb: (session: OwnerSession | null) => void)
   // Kept synchronous: awaiting other supabase calls inside this callback can
   // deadlock on the auth lock.
   const { data } = getSupabase().auth.onAuthStateChange((_event, session) => {
-    cb(session
-      ? { email: session.user.email ?? '', googleToken: session.provider_token ?? null }
-      : null)
+    cb(session ? { email: session.user.email ?? '' } : null)
   })
   return () => data.subscription.unsubscribe()
 }
@@ -108,7 +92,7 @@ export async function isAppOwner(): Promise<boolean> {
 
 /**
  * The Supabase access token (a JWT) for calls to our own /api functions, which
- * verify it before doing anything. Unlike the Google token, supabase-js keeps it fresh.
+ * verify it before doing anything. supabase-js keeps it fresh.
  */
 export async function getAccessToken(): Promise<string | null> {
   const { data, error } = await getSupabase().auth.getSession()

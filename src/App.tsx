@@ -68,7 +68,7 @@ export default function App() {
   // auth is derived, not stored, so there's no render where the session has been
   // verified but the app still shows the landing page (or the other way round).
   const auth: AuthState = session && session.email === verifiedEmail
-    ? { mode: 'app', email: session.email, googleToken: session.googleToken }
+    ? { mode: 'app', email: session.email }
     : demo ? { mode: 'demo' } : { mode: 'landing' }
 
   const checkingOwner = sessionEmail !== null

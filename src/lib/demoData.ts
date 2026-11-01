@@ -1,6 +1,5 @@
 // Sample data used in demo mode — no API call, no auth required.
-// This is the same dataset that was written to the Google Sheet by create_sheet.py,
-// kept here so portfolio visitors can explore the full UI without signing in.
+// Fictional, so portfolio visitors can explore the full UI without signing in.
 
 import type {
   Transaction, IrasSummary, MonthlySummary, PnlTotals, Client, ClientActivity, Invoice, InvoiceClause,
