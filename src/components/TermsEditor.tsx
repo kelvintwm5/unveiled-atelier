@@ -156,8 +156,7 @@ export default function TermsEditor({ value, onChange, ariaLabel, rows = 5, plac
         )}
       </div>
       <p className="text-xs text-stone-400 mt-1">
-        Select words, then press a button or Cmd/Ctrl + B, I or U. Lines starting with “- ” print
-        as bullets.
+        Lines starting with “- ” print as bullets.
       </p>
     </div>
   )

@@ -29,32 +29,41 @@ describe('shortcutFormat', () => {
 describe('parseText', () => {
   it('turns "- " lines into bullets and keeps other lines as text', () => {
     expect(parseText('Design as discussed.\n- French lace\n- Pearls')).toEqual([
-      { bullet: false, text: 'Design as discussed.' },
-      { bullet: true,  text: 'French lace' },
-      { bullet: true,  text: 'Pearls' },
+      { bullet: false, text: 'Design as discussed.', gapBefore: false },
+      { bullet: true,  text: 'French lace',          gapBefore: false },
+      { bullet: true,  text: 'Pearls',               gapBefore: false },
     ])
   })
 
-  it('drops blank lines and trailing spaces, and accepts Windows line endings', () => {
+  it('turns blank lines into a paragraph gap, and accepts Windows line endings', () => {
     expect(parseText('One  \r\n\r\n  - Two \n')).toEqual([
-      { bullet: false, text: 'One' },
-      { bullet: true,  text: 'Two' },
+      { bullet: false, text: 'One', gapBefore: false },
+      { bullet: true,  text: 'Two', gapBefore: true  },
     ])
+  })
+
+  it('makes one gap from several blank lines', () => {
+    expect(parseText('One\n\n  \n\nTwo').map(b => b.gapBefore)).toEqual([false, true])
+  })
+
+  it('has no gap above the first line or after the last', () => {
+    expect(parseText('\n\nOne\n\n').map(b => b.gapBefore)).toEqual([false])
   })
 
   it('needs the space after the dash', () => {
     expect(parseText('-5% discount\n--')).toEqual([
-      { bullet: false, text: '-5% discount' },
-      { bullet: false, text: '--' },
+      { bullet: false, text: '-5% discount', gapBefore: false },
+      { bullet: false, text: '--',           gapBefore: false },
     ])
   })
 
   it('keeps a bullet when its whole line is styled', () => {
-    expect(parseText('<b>- Deposit</b>')).toEqual([{ bullet: true, text: '<b>Deposit</b>' }])
+    expect(parseText('<b>- Deposit</b>')).toEqual([{ bullet: true, text: '<b>Deposit</b>', gapBefore: false }])
   })
 
   it('treats a line with only styling as blank', () => {
-    expect(parseText('<b> </b>\nOne')).toEqual([{ bullet: false, text: 'One' }])
+    expect(parseText('<b> </b>\nOne')).toEqual([{ bullet: false, text: 'One', gapBefore: false }])
+    expect(parseText('Zero\n<b> </b>\nOne').map(b => b.gapBefore)).toEqual([false, true])
   })
 
   it('is empty for empty text', () => {
