@@ -63,6 +63,7 @@ export interface Client {
   budget: number         // SGD
   stage: ClientStage
   notes: string
+  activityNotes: string  // free text on the profile; the dated log is ClientActivity
 }
 
 export interface ClientActivity {

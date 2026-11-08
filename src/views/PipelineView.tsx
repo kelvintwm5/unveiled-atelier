@@ -1,11 +1,11 @@
 import { useEffect, useState } from 'react'
-import { listClients, createClient, updateClientStage } from '../lib/clientData'
-import type { Client, ClientStage, NewClient, VeilType } from '../types'
+import { listArchivedClients, listClients, restoreClient, updateClientStage } from '../lib/clientData'
+import ClientProfileModal, { STAGES } from '../components/ClientProfileModal'
+import type { Client, ClientStage, VeilType } from '../types'
 
-const STAGES: ClientStage[] = ['Inquiry', 'Consultation', 'Fitting', 'Confirmed', 'Completed', 'Lost']
-const VEIL_TYPES: VeilType[] = ['Rental', 'Bespoke Veil', 'Bespoke Rental', 'TBD']
 const ALL_FILTER = 'All' as const
-type Filter = typeof ALL_FILTER | ClientStage
+const DELETED_FILTER = 'Deleted' as const
+type Filter = typeof ALL_FILTER | typeof DELETED_FILTER | ClientStage
 
 const STAGE_COLORS: Record<ClientStage, string> = {
   Inquiry:      'bg-sky-100 text-sky-700 border-sky-200',
@@ -23,73 +23,65 @@ const VEIL_COLORS: Record<VeilType, string> = {
   'TBD':            'bg-stone-50 text-stone-400',
 }
 
-const inputCls = [
-  'w-full border border-stone-200 rounded-lg px-3 py-2 text-sm text-stone-800',
-  'focus:outline-none focus:ring-2 focus:ring-rose-300 focus:border-transparent',
-  'placeholder:text-stone-300 bg-white',
-].join(' ')
-
-const EMPTY_FORM: Omit<NewClient, 'budget'> & { budget: string } = {
-  name: '', email: '', phone: '', weddingDate: '',
-  veilType: 'TBD', budget: '', stage: 'Inquiry', notes: '',
-}
-
 interface Props {
   mode: 'demo' | 'app'
 }
 
 export default function PipelineView({ mode }: Props) {
   const [clients, setClients]       = useState<Client[]>([])
+  const [archived, setArchived]     = useState<Client[]>([])
   const [loading, setLoading]       = useState(true)
   const [error, setError]           = useState('')
   const [filter, setFilter]         = useState<Filter>(ALL_FILTER)
-  const [showModal, setShowModal]   = useState(false)
-  const [form, setForm]             = useState(EMPTY_FORM)
-  const [saving, setSaving]         = useState(false)
-  const [saveError, setSaveError]   = useState('')
-  const [stageError, setStageError] = useState('')
+  // null: closed. { client: null }: adding. { client }: viewing that client.
+  const [profile, setProfile]       = useState<{ client: Client | null } | null>(null)
+  const [actionError, setActionError] = useState('')
 
   useEffect(() => {
     setLoading(true)
     setError('')
-    listClients(mode)
-      .then(setClients)
+    Promise.all([listClients(mode), listArchivedClients(mode)])
+      .then(([c, a]) => { setClients(c); setArchived(a) })
       .catch((e: unknown) => setError(e instanceof Error ? e.message : String(e)))
       .finally(() => setLoading(false))
   }, [mode])
 
+  const showingDeleted = filter === DELETED_FILTER
   const filtered = filter === ALL_FILTER ? clients : clients.filter(c => c.stage === filter)
 
   // Optimistic: the card moves straight away and moves back if the save fails.
   async function handleStageChange(clientId: string, oldStage: ClientStage, newStage: ClientStage) {
-    setStageError('')
+    setActionError('')
     setClients(prev => prev.map(c => c.id === clientId ? { ...c, stage: newStage } : c))
     try {
       await updateClientStage(mode, clientId, newStage)
     } catch (e: unknown) {
       setClients(prev => prev.map(c => c.id === clientId ? { ...c, stage: oldStage } : c))
-      setStageError(e instanceof Error ? e.message : 'Failed to change the stage.')
+      setActionError(e instanceof Error ? e.message : 'Failed to change the stage.')
     }
   }
 
-  async function handleAddClient() {
-    if (!form.name.trim()) { setSaveError('Name is required.'); return }
-    setSaving(true)
-    setSaveError('')
-    const input: NewClient = {
-      ...form,
-      name:   form.name.trim(),
-      budget: parseFloat(form.budget) || 0,
-    }
+  function handleSaved(saved: Client) {
+    setClients(prev => prev.some(c => c.id === saved.id)
+      ? prev.map(c => c.id === saved.id ? saved : c)
+      : [...prev, saved])
+    setProfile(null)
+  }
+
+  function handleDeleted(client: Client) {
+    setClients(prev => prev.filter(c => c.id !== client.id))
+    setArchived(prev => [client, ...prev])
+    setProfile(null)
+  }
+
+  async function handleRestore(client: Client) {
+    setActionError('')
     try {
-      const client = await createClient(mode, input)
+      await restoreClient(mode, client.id)
+      setArchived(prev => prev.filter(c => c.id !== client.id))
       setClients(prev => [...prev, client])
-      setShowModal(false)
-      setForm(EMPTY_FORM)
     } catch (e: unknown) {
-      setSaveError(e instanceof Error ? e.message : 'Failed to save.')
-    } finally {
-      setSaving(false)
+      setActionError(e instanceof Error ? e.message : 'Failed to restore the client.')
     }
   }
 
@@ -107,7 +99,7 @@ export default function PipelineView({ mode }: Props) {
             </p>
           </div>
           <button
-            onClick={() => setShowModal(true)}
+            onClick={() => setProfile({ client: null })}
             className="shrink-0 px-4 py-2 bg-rose-800 text-white text-sm rounded-lg
                        hover:bg-rose-700 transition-colors"
           >
@@ -117,8 +109,10 @@ export default function PipelineView({ mode }: Props) {
 
         {/* Stage filter tabs */}
         <div className="flex gap-2 overflow-x-auto pb-1 mb-6">
-          {([ALL_FILTER, ...STAGES] as Filter[]).map(s => {
-            const count = s === ALL_FILTER ? clients.length : clients.filter(c => c.stage === s).length
+          {([ALL_FILTER, ...STAGES, DELETED_FILTER] as Filter[]).map(s => {
+            const count = s === ALL_FILTER ? clients.length
+              : s === DELETED_FILTER ? archived.length
+              : clients.filter(c => c.stage === s).length
             return (
               <button
                 key={s}
@@ -138,10 +132,34 @@ export default function PipelineView({ mode }: Props) {
 
         {loading && <p className="text-stone-400 text-sm">Loading…</p>}
         {error && <p className="text-rose-600 text-sm">{error}</p>}
-        {stageError && <p className="text-rose-600 text-sm mb-4">{stageError}</p>}
+        {actionError && <p className="text-rose-600 text-sm mb-4">{actionError}</p>}
 
         {/* Client cards */}
-        {!loading && !error && (
+        {!loading && !error && showingDeleted && (
+          archived.length === 0 ? (
+            <div className="text-center py-16 text-stone-400 text-sm">No deleted clients.</div>
+          ) : (
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+              {archived.map(client => (
+                <div key={client.id} className="bg-white border border-stone-200 rounded-xl p-4 flex items-center justify-between gap-3">
+                  <div className="min-w-0">
+                    <h3 className="font-medium text-stone-800 leading-tight break-words">{client.name}</h3>
+                    <p className="text-xs text-stone-400 mt-1">{client.stage} · {client.veilType}</p>
+                  </div>
+                  <button
+                    onClick={() => handleRestore(client)}
+                    className="shrink-0 px-3 py-1.5 text-xs font-medium text-stone-600 border border-stone-200
+                               rounded-lg hover:bg-stone-50 transition-colors"
+                  >
+                    Restore
+                  </button>
+                </div>
+              ))}
+            </div>
+          )
+        )}
+
+        {!loading && !error && !showingDeleted && (
           filtered.length === 0 ? (
             <div className="text-center py-16 text-stone-400 text-sm">
               No clients in this stage.
@@ -153,6 +171,7 @@ export default function PipelineView({ mode }: Props) {
                   key={client.id}
                   client={client}
                   onStageChange={(newStage) => handleStageChange(client.id, client.stage, newStage)}
+                  onOpen={() => setProfile({ client })}
                 />
               ))}
             </div>
@@ -161,90 +180,25 @@ export default function PipelineView({ mode }: Props) {
 
       </div>
 
-      {/* Add Client modal */}
-      {showModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4">
-          <div className="bg-white rounded-2xl shadow-xl w-full max-w-lg max-h-[90vh] overflow-y-auto">
-            <div className="px-6 py-5 border-b border-stone-100">
-              <h2 className="text-lg font-semibold text-stone-800">Add Client</h2>
-            </div>
-            <div className="px-6 py-5 space-y-4">
-              <Field label="Name *">
-                <input className={inputCls} value={form.name}
-                  onChange={e => setForm(f => ({ ...f, name: e.target.value }))}
-                  placeholder="Rachel Tan" />
-              </Field>
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                <Field label="Email">
-                  <input className={inputCls} type="email" value={form.email}
-                    onChange={e => setForm(f => ({ ...f, email: e.target.value }))}
-                    placeholder="email@example.com" />
-                </Field>
-                <Field label="Phone">
-                  <input className={inputCls} value={form.phone}
-                    onChange={e => setForm(f => ({ ...f, phone: e.target.value }))}
-                    placeholder="+65 9123 4567" />
-                </Field>
-              </div>
-              <div className="grid grid-cols-2 gap-4">
-                <Field label="Wedding Date">
-                  <input className={inputCls} type="date" value={form.weddingDate}
-                    onChange={e => setForm(f => ({ ...f, weddingDate: e.target.value }))} />
-                </Field>
-                <Field label="Budget (SGD)">
-                  <input className={inputCls} type="number" min="0" step="10"
-                    value={form.budget}
-                    onChange={e => setForm(f => ({ ...f, budget: e.target.value }))}
-                    placeholder="0" />
-                </Field>
-              </div>
-              <div className="grid grid-cols-2 gap-4">
-                <Field label="Veil Type">
-                  <select className={inputCls} value={form.veilType}
-                    onChange={e => setForm(f => ({ ...f, veilType: e.target.value as VeilType }))}>
-                    {VEIL_TYPES.map(t => <option key={t} value={t}>{t}</option>)}
-                  </select>
-                </Field>
-                <Field label="Stage">
-                  <select className={inputCls} value={form.stage}
-                    onChange={e => setForm(f => ({ ...f, stage: e.target.value as ClientStage }))}>
-                    {STAGES.map(s => <option key={s} value={s}>{s}</option>)}
-                  </select>
-                </Field>
-              </div>
-              <Field label="Notes">
-                <textarea className={`${inputCls} resize-none`} rows={3} value={form.notes}
-                  onChange={e => setForm(f => ({ ...f, notes: e.target.value }))}
-                  placeholder="Veil preferences, fitting notes, etc." />
-              </Field>
-              {saveError && <p className="text-rose-600 text-sm">{saveError}</p>}
-            </div>
-            <div className="px-6 py-4 border-t border-stone-100 flex justify-end gap-3">
-              <button
-                onClick={() => { setShowModal(false); setForm(EMPTY_FORM); setSaveError('') }}
-                className="px-4 py-2 text-sm text-stone-600 hover:text-stone-800 transition-colors"
-              >
-                Cancel
-              </button>
-              <button
-                onClick={handleAddClient}
-                disabled={saving}
-                className="px-5 py-2 bg-rose-800 text-white text-sm rounded-lg
-                           hover:bg-rose-700 transition-colors disabled:opacity-40"
-              >
-                {saving ? 'Saving…' : 'Add Client'}
-              </button>
-            </div>
-          </div>
-        </div>
+      {/* key: a different client must start from a fresh form, not the last one's */}
+      {profile && (
+        <ClientProfileModal
+          key={profile.client?.id ?? 'new'}
+          mode={mode}
+          client={profile.client}
+          onClose={() => setProfile(null)}
+          onSaved={handleSaved}
+          onDeleted={handleDeleted}
+        />
       )}
     </div>
   )
 }
 
-function ClientCard({ client, onStageChange }: {
+function ClientCard({ client, onStageChange, onOpen }: {
   client: Client
   onStageChange: (stage: ClientStage) => void
+  onOpen: () => void
 }) {
   return (
     <div className="bg-white border border-stone-200 rounded-xl p-4 space-y-3">
@@ -287,15 +241,13 @@ function ClientCard({ client, onStageChange }: {
           {client.phone && <p>{client.phone}</p>}
         </div>
       )}
-    </div>
-  )
-}
 
-function Field({ label, children }: { label: string; children: React.ReactNode }) {
-  return (
-    <div>
-      <label className="block text-sm text-stone-600 mb-1.5">{label}</label>
-      {children}
+      <button
+        onClick={onOpen}
+        className="py-1 text-sm font-medium text-rose-800 hover:text-rose-700 transition-colors"
+      >
+        View details
+      </button>
     </div>
   )
 }
