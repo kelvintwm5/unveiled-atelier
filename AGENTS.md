@@ -160,9 +160,9 @@ npm test         # Vitest, for the pure domain modules in src/lib
     a service library of standard line items, the default terms, and business details
     (PayNow, bank, address).
   - Text formatting: plain multi-line text, where lines that start with `- ` become
-    bullets and `**bold**`, `*italic*` and `__underline__` style words. Everything
-    reads it through `src/lib/invoiceText.ts`. See the Decisions entry before
-    replacing it with a rich-text editor.
+    bullets and `<b>`, `<i>` and `<u>` style words. It isn't HTML: those are the only
+    tags. Everything reads it through `src/lib/invoiceText.ts`, and `TermsEditor`
+    shows it styled while editing.
   - Changing the defaults never changes invoices that were already issued.
 - **Who changes what:** Esther edits invoice content and settings in the app. PDF
   layout, new fields, and calculation rules are code changes.
@@ -237,13 +237,15 @@ Ask before you:
   - Invoices issued under the 50% rule keep their frozen totals. Reissuing one
     recreates equivalent rows (`adjustmentsForReissue`) so the amount carries over.
 
-- **2026-11-08: bold, italic and underline are text markers with a toolbar and
-  preview, not a what-you-see editor.**
-  - Why: the text stays plain, so existing terms keep working and it's frozen on
-    issue like any other text, with no new dependency.
-  - What it costs: Esther sees the markers while editing, with the formatted result
-    directly below.
-  - Revisit if the markers confuse her in real use.
+- **2026-11-08: terms show real bold, italic and underline in the box, using the
+  browser's own editing rather than an editor library.**
+  - Why: Esther shouldn't have to read markup, and three styles don't justify a
+    dependency. What's stored stays plain text, so older terms keep working and it's
+    frozen on issue like any other text.
+  - What it costs: it relies on `document.execCommand`, which is marked deprecated
+    but is supported everywhere and has no replacement yet. Phone browsers can be
+    quirky, so test any change to `TermsEditor` on a real iPhone.
+  - Revisit with Tiptap if editing on her phone proves unreliable.
 
 - **2026-11-08: deleting a client hides it (`archived_at`) and can be restored.**
   - Why: invoices and transactions reference clients and must be kept.

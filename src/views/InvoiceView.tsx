@@ -7,7 +7,7 @@ import {
 } from '../lib/invoices'
 import { lineTotal, calcSubtotal, halfBalance } from '../lib/invoiceTotals'
 import { renderFromDraft } from '../lib/invoiceRender'
-import { appendText } from '../lib/invoiceText'
+import { appendText, stripStyles } from '../lib/invoiceText'
 import { renderInvoicePdf, openPdf } from '../lib/invoicePdf'
 import { listClients, clientLabels } from '../lib/clientData'
 import { formatSGD } from '../lib/money'
@@ -554,7 +554,7 @@ function DraftEditor({ mode, id, initial, invoices, clients, settings, clauses, 
                     placeholder="e.g. Design as discussed at the consultation on 3 Jan."
                     className={`${inputCls} resize-y`}
                   />
-                  <ClausePicker clauses={clauses} onPick={body => update({ clientNote: appendText(draft.clientNote, body) })} />
+                  <ClausePicker clauses={clauses} onPick={body => update({ clientNote: appendText(draft.clientNote, stripStyles(body)) })} />
                 </Field>
               </div>
             </Section>
@@ -1264,7 +1264,7 @@ function LineItemRow({ line, index, canRemove, clauses, services, onChange, onRe
               placeholder="e.g. Custom-made for client use. Lines starting with “- ” print as bullets."
               className={`${inputCls} resize-y`}
             />
-            <ClausePicker clauses={clauses} onPick={body => onChange({ description: appendText(line.description, body) })} />
+            <ClausePicker clauses={clauses} onPick={body => onChange({ description: appendText(line.description, stripStyles(body)) })} />
           </Field>
           <Field label="Quantity">
             <input

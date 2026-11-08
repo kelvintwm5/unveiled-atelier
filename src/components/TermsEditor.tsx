@@ -1,6 +1,7 @@
-import { useLayoutEffect, useRef } from 'react'
-import { toggleFormat, type InlineFormat } from '../lib/invoiceText'
-import FormattedText from './FormattedText'
+import { useEffect, useLayoutEffect, useRef, type ClipboardEvent, type KeyboardEvent } from 'react'
+import {
+  linesFromEditor, parseInline, serializeLines, shortcutFormat, type InlineFormat,
+} from '../lib/invoiceText'
 
 interface Props {
   value: string
@@ -16,32 +17,102 @@ const BUTTONS: { format: InlineFormat; label: string; name: string; style: strin
   { format: 'underline', label: 'U', name: 'Underline', style: 'underline' },
 ]
 
-// A text box with B / I / U buttons and a preview of how the text will print.
-// The text itself stays plain, with small markers around the styled words (see
-// invoiceText.ts), so it needs no editor library. The preview is there because
-// the markers show in the box while typing.
+// Puts stored text into the editor. Builds real elements rather than setting
+// innerHTML, so text that merely looks like markup can't become markup.
+function fillEditor(root: HTMLElement, value: string) {
+  const lines = value === '' ? [] : value.split(/\r?\n/)
+  root.replaceChildren(...lines.map(line => {
+    const div = document.createElement('div')
+    const spans = parseInline(line)
+    if (spans.length === 0) div.appendChild(document.createElement('br'))
+    for (const span of spans) {
+      let node: Node = document.createTextNode(span.text)
+      for (const [on, tag] of [[span.bold, 'b'], [span.italic, 'i'], [span.underline, 'u']] as const) {
+        if (!on) continue
+        const wrapper = document.createElement(tag)
+        wrapper.appendChild(node)
+        node = wrapper
+      }
+      div.appendChild(node)
+    }
+    return div
+  }))
+}
+
+// A text box that shows real bold, italic and underline as you type, using the
+// browser's own editing instead of an editor library: three styles don't justify
+// the dependency. What's stored is still plain text (see invoiceText.ts).
+//
+// React doesn't own the contents. If it re-rendered them on each keystroke the
+// cursor would jump, so the box is only refilled when the value changes from
+// outside, such as "Reset to default" or inserting a clause.
+//
+// document.execCommand is marked deprecated, but it's supported by every browser
+// and the web has no replacement for it yet. It also keeps Cmd+Z working.
 //
 // Don't put this inside a <label>: a label passes clicks on it to the first
 // control it contains, which here would be the Bold button.
 export default function TermsEditor({ value, onChange, ariaLabel, rows = 5, placeholder }: Props) {
-  const box = useRef<HTMLTextAreaElement>(null)
-  // What to select once React has put the new text in the box.
-  const pendingSelection = useRef<{ start: number; end: number } | null>(null)
+  const box = useRef<HTMLDivElement>(null)
+  // The value the box currently shows; anything else came from outside.
+  const shown = useRef<string | null>(null)
+  // The last selection in the box. A tap on a button can clear it on a phone.
+  const lastRange = useRef<Range | null>(null)
 
   useLayoutEffect(() => {
-    if (!pendingSelection.current || !box.current) return
-    box.current.focus()
-    box.current.setSelectionRange(pendingSelection.current.start, pendingSelection.current.end)
-    pendingSelection.current = null
+    if (!box.current || value === shown.current) return
+    fillEditor(box.current, value)
+    shown.current = value
   }, [value])
+
+  useEffect(() => {
+    function remember() {
+      const selection = document.getSelection()
+      if (selection?.rangeCount && box.current?.contains(selection.anchorNode)) {
+        lastRange.current = selection.getRangeAt(0).cloneRange()
+      }
+    }
+    document.addEventListener('selectionchange', remember)
+    return () => document.removeEventListener('selectionchange', remember)
+  }, [])
+
+  function emitChange() {
+    if (!box.current) return
+    const next = serializeLines(linesFromEditor(box.current))
+    if (next === shown.current) return
+    shown.current = next
+    onChange(next)
+  }
 
   function applyFormat(format: InlineFormat) {
     const el = box.current
     if (!el) return
-    const edit = toggleFormat(value, el.selectionStart, el.selectionEnd, format)
-    if (edit.text === value) return
-    pendingSelection.current = { start: edit.start, end: edit.end }
-    onChange(edit.text)
+    const selection = document.getSelection()
+    if (selection && !el.contains(selection.anchorNode)) {
+      el.focus()
+      if (lastRange.current) {
+        selection.removeAllRanges()
+        selection.addRange(lastRange.current)
+      }
+    }
+    // Plain <b>, <i> and <u> rather than styled spans, where the browser allows it.
+    document.execCommand('styleWithCSS', false, 'false')
+    document.execCommand(format)
+    emitChange()
+  }
+
+  function handleKeyDown(e: KeyboardEvent<HTMLDivElement>) {
+    const format = shortcutFormat(e)
+    if (!format) return
+    // Otherwise the browser acts on it too: Ctrl+U opens the page source on Windows.
+    e.preventDefault()
+    applyFormat(format)
+  }
+
+  // As plain text, so fonts and colours from Word or an email can't reach an invoice.
+  function handlePaste(e: ClipboardEvent<HTMLDivElement>) {
+    e.preventDefault()
+    document.execCommand('insertText', false, e.clipboardData.getData('text/plain'))
   }
 
   return (
@@ -52,7 +123,7 @@ export default function TermsEditor({ value, onChange, ariaLabel, rows = 5, plac
             key={b.format}
             type="button"
             aria-label={b.name}
-            title={b.name}
+            title={`${b.name} (Cmd/Ctrl+${b.label})`}
             // Stops the tap from taking the focus, and so the selection, away from the box.
             onMouseDown={e => e.preventDefault()}
             onClick={() => applyFormat(b.format)}
@@ -63,29 +134,34 @@ export default function TermsEditor({ value, onChange, ariaLabel, rows = 5, plac
           </button>
         ))}
       </div>
-      <textarea
-        ref={box}
-        aria-label={ariaLabel}
-        value={value}
-        rows={rows}
-        placeholder={placeholder}
-        onChange={e => onChange(e.target.value)}
-        className={`${inputCls} resize-y`}
-      />
+      <div className="relative">
+        <div
+          ref={box}
+          role="textbox"
+          aria-multiline="true"
+          aria-label={ariaLabel}
+          contentEditable
+          suppressContentEditableWarning
+          // Each new line as its own <div>, the same in every browser.
+          onFocus={() => document.execCommand('defaultParagraphSeparator', false, 'div')}
+          onInput={emitChange}
+          onKeyDown={handleKeyDown}
+          onPaste={handlePaste}
+          onDrop={e => e.preventDefault()}
+          style={{ minHeight: `${rows * 1.25 + 1}rem` }}
+          className={`${inputCls} whitespace-pre-wrap break-words max-h-96 overflow-y-auto`}
+        />
+        {placeholder && value.trim() === '' && (
+          <p className="absolute top-2 left-3 text-sm text-stone-300 pointer-events-none">{placeholder}</p>
+        )}
+      </div>
       <p className="text-xs text-stone-400 mt-1">
-        Select words, or tap into a line to style all of it, then press a button. Lines starting
-        with “- ” print as bullets.
+        Select words, then press a button or Cmd/Ctrl + B, I or U. Lines starting with “- ” print
+        as bullets.
       </p>
-      {value.trim() && (
-        <div className="mt-2 bg-stone-50 border border-stone-200 rounded-lg px-3 py-2">
-          <p className="text-xs font-medium text-stone-400 mb-1">How it will print</p>
-          <FormattedText text={value} className="text-sm text-stone-600 max-h-48 overflow-y-auto" />
-        </div>
-      )}
     </div>
   )
 }
 
 const inputCls = `w-full border border-stone-200 rounded-lg px-3 py-2 text-sm text-stone-800
-  bg-white focus:outline-none focus:ring-2 focus:ring-rose-300 focus:border-transparent
-  placeholder:text-stone-300`
+  bg-white focus:outline-none focus:ring-2 focus:ring-rose-300 focus:border-transparent`

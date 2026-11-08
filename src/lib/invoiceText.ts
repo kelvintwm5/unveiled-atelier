@@ -1,25 +1,31 @@
 // The one text format invoices use: plain multi-line text where a line starting
-// with "- " is a bullet, and **bold**, *italic* and __underline__ style part of a
-// line. Both the PDF and the screens read it through here, so they can't disagree.
+// with "- " is a bullet, and <b>, <i> and <u> style part of a line. Both the PDF and
+// the screens read it through here, so they can't disagree.
 //
-// Why markers instead of storing HTML or a rich-text document: the text stays
-// plain, so everything written before formatting existed keeps working, it's
-// frozen on an issued invoice like any other text, and no editor library is needed.
+// It isn't HTML: those six exact tags are the only markup, and everything else is
+// literal text. Why store this instead of an editor's document format: text written
+// before styling existed keeps working unchanged, it's frozen on an issued invoice
+// like any other text, and no editor library is needed.
 
 export interface TextBlock {
   bullet: boolean
   text: string
 }
 
+// A bullet's dash can sit inside its styling when a whole line is made bold.
+const BULLET_START = /^\s*((?:<[biu]>)*)- /
+
 /** Splits text into lines and bullets. Blank lines and trailing spaces are dropped. */
 export function parseText(text: string): TextBlock[] {
   return text
     .split(/\r?\n/)
     .map(line => line.trimEnd())
-    .filter(line => line.trim() !== '')
+    .filter(line => stripStyles(line).trim() !== '')
     .map(line => {
-      const bullet = /^\s*- /.test(line)
-      return { bullet, text: bullet ? line.replace(/^\s*- /, '') : line }
+      const bullet = BULLET_START.exec(line)
+      return bullet
+        ? { bullet: true, text: bullet[1] + line.slice(bullet[0].length) }
+        : { bullet: false, text: line }
     })
 }
 
@@ -44,181 +50,169 @@ export interface InlineSpan {
 
 type Style = Omit<InlineSpan, 'text'>
 
-// Longest first, so *** isn't read as ** followed by *.
-const MARKERS: { marker: string; style: Partial<Style> }[] = [
-  { marker: '***', style: { bold: true, italic: true } },
-  { marker: '**',  style: { bold: true } },
-  { marker: '__',  style: { underline: true } },
-  { marker: '*',   style: { italic: true } },
-]
+const NO_STYLE: Style = { bold: false, italic: false, underline: false }
 
-const isSpace = (c: string | undefined) => c === undefined || /\s/.test(c)
-const isWordChar = (c: string | undefined) => c !== undefined && /[0-9A-Za-z]/.test(c)
+const STYLE_TAGS: [keyof Style, string][] = [['bold', 'b'], ['italic', 'i'], ['underline', 'u']]
 
-// Where this opening marker's closing marker is, or -1. A marker only closes
-// right after a non-space, which is what keeps "S$20 * 2 * 3" plain. Stars can
-// pile up ("**a *b***"), so the closing marker is the last stars of the run.
-function findClose(text: string, from: number, marker: string): number {
-  const ch = marker[0]
-  let j = from
-  while (j < text.length) {
-    if (text[j] !== ch) { j++; continue }
-    let run = 1
-    while (text[j + run] === ch) run++
-    const closes = ch === '*'
-      ? run >= marker.length && (marker.length > 1 || run % 2 === 1)   // an even run inside *italic* is **bold**
-      : run === marker.length
-    const at = j + run - marker.length
-    if (closes && at > from && !isSpace(text[at - 1])) return at
-    j += run
-  }
-  return -1
+const TAG = /<(\/?)([biu])>/g
+
+// Someone typing the literal characters "<b>" is stored with the "<" escaped, so
+// it can't turn into styling the next time the text is read.
+const LOOKS_LIKE_TAG = /<(?=\/?[biu]>)/g
+const ESCAPED_TAG = /&lt;(?=\/?[biu]>)/g
+
+const unescapeText = (text: string) => text.replace(ESCAPED_TAG, '<')
+
+/** The words without their styling, for text boxes that can't show it. */
+export function stripStyles(text: string): string {
+  return unescapeText(text.replace(TAG, ''))
 }
 
-function spansOf(text: string, base: Style): InlineSpan[] {
+const sameStyle = (a: Style, b: Style) => STYLE_TAGS.every(([key]) => a[key] === b[key])
+
+/** Splits one line into runs of text and their styles. */
+export function parseInline(text: string): InlineSpan[] {
   const spans: InlineSpan[] = []
-  let plainFrom = 0
-  let i = 0
+  const style: Style = { ...NO_STYLE }
+  let from = 0
 
-  const flushPlain = (end: number) => {
-    if (end > plainFrom) spans.push({ text: text.slice(plainFrom, end), ...base })
+  const add = (raw: string) => {
+    if (!raw) return
+    const last = spans[spans.length - 1]
+    if (last && sameStyle(last, style)) last.text += unescapeText(raw)
+    else spans.push({ text: unescapeText(raw), ...style })
   }
 
-  while (i < text.length) {
-    const found = MARKERS.find(({ marker }) => text.startsWith(marker, i))
-    if (!found) { i++; continue }
-
-    const { marker, style } = found
-    const after = text[i + marker.length]
-    const canOpen = !isSpace(after) && after !== marker[0]
-      // Keeps 2*3*4 and snake__case__names plain.
-      && !((marker === '*' || marker === '__') && isWordChar(text[i - 1]))
-    const close = canOpen ? findClose(text, i + marker.length, marker) : -1
-
-    if (close === -1) {
-      // Not a real marker: step over the whole run so its tail isn't retried.
-      while (text[i] === marker[0]) i++
-      continue
-    }
-
-    flushPlain(i)
-    spans.push(...spansOf(text.slice(i + marker.length, close), { ...base, ...style }))
-    i = close + marker.length
-    plainFrom = i
+  for (const match of text.matchAll(TAG)) {
+    add(text.slice(from, match.index))
+    const key = STYLE_TAGS.find(([, tag]) => tag === match[2])![0]
+    style[key] = match[1] === ''
+    from = match.index + match[0].length
   }
-  flushPlain(text.length)
+  add(text.slice(from))
   return spans
 }
 
-/**
- * Splits one line into runs of text and their styles. A marker with no partner
- * prints as it is, so ordinary asterisks and underscores are safe.
- */
-export function parseInline(text: string): InlineSpan[] {
-  return spansOf(text, { bold: false, italic: false, underline: false })
+function serializeLine(spans: InlineSpan[]): string {
+  const open: Style = { ...NO_STYLE }
+  let out = ''
+
+  const closeUnless = (keep: Style) => {
+    for (const [key, tag] of [...STYLE_TAGS].reverse()) {
+      if (open[key] && !keep[key]) { out += `</${tag}>`; open[key] = false }
+    }
+  }
+
+  for (const span of spans) {
+    if (!span.text) continue
+    closeUnless(span)
+    for (const [key, tag] of STYLE_TAGS) {
+      if (span[key] && !open[key]) { out += `<${tag}>`; open[key] = true }
+    }
+    out += span.text.replace(LOOKS_LIKE_TAG, '&lt;')
+  }
+  closeUnless(NO_STYLE)
+  return out
 }
 
-// ── The formatting buttons ────────────────────────────────────────────────────
+/** The reverse of parseInline, one entry per line. */
+export function serializeLines(lines: InlineSpan[][]): string {
+  return lines.map(serializeLine).join('\n')
+}
+
+// ── Reading the editor ────────────────────────────────────────────────────────
+
+// Only the parts of a browser DOM node used below. Written against this rather
+// than the real DOM so the rules can be tested without a browser.
+export interface EditorNode {
+  nodeType: number
+  nodeName: string
+  nodeValue: string | null
+  childNodes: ArrayLike<EditorNode>
+  style?: { fontWeight: string; fontStyle: string; textDecoration: string; textDecorationLine: string }
+}
+
+const TEXT_NODE = 3
+const ELEMENT_NODE = 1
+const BLOCKS = new Set(['DIV', 'P', 'LI', 'UL', 'OL', 'BLOCKQUOTE', 'H1', 'H2', 'H3', 'H4', 'H5', 'H6'])
+
+// Browsers disagree on how they mark bold: Chrome writes <b>, Safari can write
+// <span style="font-weight: bold">. Both have to read the same.
+function styleOfNode(node: EditorNode, inherited: Style): Style {
+  const style = { ...inherited }
+  if (node.nodeName === 'B' || node.nodeName === 'STRONG') style.bold = true
+  if (node.nodeName === 'I' || node.nodeName === 'EM') style.italic = true
+  if (node.nodeName === 'U') style.underline = true
+
+  const css = node.style
+  if (css) {
+    const weight = css.fontWeight
+    if (weight === 'bold' || weight === 'bolder' || Number(weight) >= 600) style.bold = true
+    if (weight === 'normal' || weight === 'lighter' || (Number(weight) > 0 && Number(weight) < 600)) style.bold = false
+    if (css.fontStyle === 'italic' || css.fontStyle === 'oblique') style.italic = true
+    if (css.fontStyle === 'normal') style.italic = false
+    if (`${css.textDecoration} ${css.textDecorationLine}`.includes('underline')) style.underline = true
+  }
+  return style
+}
+
+/** Reads the editor's contents as lines of styled text. */
+export function linesFromEditor(root: EditorNode): InlineSpan[][] {
+  const lines: InlineSpan[][] = []
+  let current: InlineSpan[] = []
+  const endLine = () => { lines.push(current); current = [] }
+
+  function walkChildren(node: EditorNode, style: Style) {
+    Array.from(node.childNodes).forEach(child => walk(child, style))
+  }
+
+  function walk(node: EditorNode, inherited: Style) {
+    if (node.nodeType === TEXT_NODE) {
+      // Browsers put non-breaking spaces where a run of normal ones would collapse.
+      const parts = (node.nodeValue ?? '').replace(/ /g, ' ').split('\n')
+      parts.forEach((part, i) => {
+        if (i > 0) endLine()
+        if (part) current.push({ text: part, ...inherited })
+      })
+      return
+    }
+    if (node.nodeType !== ELEMENT_NODE) return
+    if (node.nodeName === 'BR') { endLine(); return }
+
+    const style = styleOfNode(node, inherited)
+    if (!BLOCKS.has(node.nodeName)) { walkChildren(node, style); return }
+
+    // A block is a line of its own. Its closing <br>, if any, has already ended it.
+    if (current.length) endLine()
+    const linesBefore = lines.length
+    walkChildren(node, style)
+    if (current.length) endLine()
+    else if (lines.length === linesBefore) lines.push([])
+  }
+
+  walkChildren(root, NO_STYLE)
+  if (current.length) endLine()
+  return lines
+}
+
+// ── Keyboard shortcuts ────────────────────────────────────────────────────────
 
 export type InlineFormat = 'bold' | 'italic' | 'underline'
 
-export interface TextEdit {
-  text: string
-  start: number
-  end: number
-}
-
-interface MarkerState { bold: boolean; italic: boolean; underline: boolean }
-
-function stateOf(left: string, right: string): MarkerState {
-  const stars = (s: string) => s.replace(/[^*]/g, '').length
-  const l = stars(left)
-  const r = stars(right)
-  return {
-    bold: l >= 2 && r >= 2,
-    italic: l % 2 === 1 && r % 2 === 1,
-    underline: left.includes('__') && right.includes('__'),
-  }
-}
-
-// One canonical wrapping: underline outermost, stars inside.
-function wrappers(st: MarkerState): [string, string] {
-  const stars = (st.bold ? '**' : '') + (st.italic ? '*' : '')
-  const under = st.underline ? '__' : ''
-  return [under + stars, stars + under]
-}
-
-// Splits a piece of a line into its marker runs and the words inside them.
-function innerOf(part: string) {
-  const m = /^([*_]*)(\s*)(.*?)(\s*)([*_]*)$/.exec(part)!
-  return { leadMarks: m[1], leadSpace: m[2], inner: m[3], trailSpace: m[4], trailMarks: m[5] }
-}
+const SHORTCUT_KEYS: Record<string, InlineFormat> = { b: 'bold', i: 'italic', u: 'underline' }
 
 /**
- * Applies or removes a style, and is what the B / I / U buttons call. With text
- * selected inside one line, it styles that text. With nothing selected, or a
- * selection across lines, it styles whole lines: easier on a phone, where
- * selecting exactly is fiddly. Every line is styled separately because a style
- * can't span lines, and a bullet's "- " stays outside the markers.
- *
- * Returns the new text and what to select afterwards, so a second button press
- * adds another style to the same words.
+ * Which style a key press asks for: Cmd on a Mac, Ctrl on Windows. With Shift or
+ * Alt held it's a different shortcut (Cmd+Shift+B opens Chrome's bookmarks bar),
+ * so those are left to the browser.
  */
-export function toggleFormat(text: string, start: number, end: number, format: InlineFormat): TextEdit {
-  const selected = text.slice(start, end)
-
-  if (start === end || selected.includes('\n')) {
-    return toggleLines(text, start, end, format)
-  }
-
-  const { leadMarks, leadSpace, inner, trailSpace, trailMarks } = innerOf(selected)
-  if (!inner) return { text, start, end }
-
-  const before = text.slice(0, start)
-  const after = text.slice(end)
-  // Marks hugging the selection only count if they're on both sides; otherwise
-  // they belong to a neighbouring word, as in **one**two.
-  const hugLeft = /[*_]*$/.exec(before)![0]
-  const hugRight = /^[*_]*/.exec(after)![0]
-  const outerLeft = hugLeft && hugRight ? hugLeft : ''
-  const outerRight = hugLeft && hugRight ? hugRight : ''
-  const left = outerLeft + leadMarks
-  const right = trailMarks + outerRight
-
-  const state = stateOf(left, right)
-  const [open, close] = wrappers({ ...state, [format]: !state[format] })
-
-  const prefix = before.slice(0, before.length - outerLeft.length) + leadSpace + open
-  const suffix = close + trailSpace + after.slice(outerRight.length)
-  return { text: prefix + inner + suffix, start: prefix.length, end: prefix.length + inner.length }
-}
-
-function toggleLines(text: string, start: number, end: number, format: InlineFormat): TextEdit {
-  const from = text.lastIndexOf('\n', start - 1) + 1
-  const nextBreak = text.indexOf('\n', end)
-  const to = nextBreak === -1 ? text.length : nextBreak
-
-  const parts = text.slice(from, to).split('\n').map(line => {
-    const prefix = /^\s*(?:- )?/.exec(line)![0]
-    return { prefix, ...innerOf(line.slice(prefix.length)) }
-  })
-
-  const styled = parts.filter(p => p.inner)
-  if (styled.length === 0) return { text, start, end }
-
-  // Mixed lines all gain the style; only when every line has it does it come off.
-  const allOn = styled.every(p => stateOf(p.leadMarks, p.trailMarks)[format])
-
-  const lines = parts.map(p => {
-    if (!p.inner) return p.prefix + p.leadMarks + p.trailMarks
-    const state = stateOf(p.leadMarks, p.trailMarks)
-    const [open, close] = wrappers({ ...state, [format]: !allOn })
-    return p.prefix + open + p.inner + close
-  })
-  const block = lines.join('\n')
-  return {
-    text: text.slice(0, from) + block + text.slice(to),
-    start: from,
-    end: from + block.length,
-  }
+export function shortcutFormat(e: {
+  key: string
+  metaKey: boolean
+  ctrlKey: boolean
+  shiftKey: boolean
+  altKey: boolean
+}): InlineFormat | null {
+  if (!(e.metaKey || e.ctrlKey) || e.shiftKey || e.altKey) return null
+  return SHORTCUT_KEYS[e.key.toLowerCase()] ?? null
 }

@@ -1,5 +1,6 @@
 import { useState } from 'react'
 import { updateInvoiceSettings, saveClause, deleteClause } from '../lib/invoices'
+import FormattedText from '../components/FormattedText'
 import ServiceLibrary from '../components/ServiceLibrary'
 import TermsEditor from '../components/TermsEditor'
 import type { InvoiceClause, InvoiceService, InvoiceSettings } from '../types'
@@ -267,7 +268,7 @@ function ClauseLibrary({ mode, clauses, onChanged }: {
           <div key={c.id} className="bg-white border border-stone-200 rounded-xl px-4 py-3 flex gap-3">
             <div className="flex-1 min-w-0">
               <p className="text-sm font-medium text-stone-800">{c.title}</p>
-              <p className="text-sm text-stone-500 whitespace-pre-line line-clamp-3">{c.body}</p>
+              <FormattedText text={c.body} className="text-sm text-stone-500 line-clamp-3" />
             </div>
             <div className="flex flex-col items-end gap-1 shrink-0">
               <button
