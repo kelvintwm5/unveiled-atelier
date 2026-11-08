@@ -8,7 +8,7 @@ describe('demo invoices', () => {
   for (const inv of DEMO_INVOICES.filter(i => i.status !== 'draft')) {
     it(`${inv.invoiceNo} follows the totals rules`, () => {
       const subtotal = calcSubtotal(inv.lines)
-      const rows = buildTotalsRows(inv.template, inv.kind, subtotal)
+      const rows = buildTotalsRows(subtotal, inv.adjustments)
       expect(inv.subtotal).toBe(subtotal)
       expect(inv.totals).toEqual(rows)
       expect(inv.amountPayable).toBe(amountPayable(rows))

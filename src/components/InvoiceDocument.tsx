@@ -6,10 +6,10 @@
 // react-pdf is too big to ship with the rest of the app.
 
 import { Document, Font, Page, StyleSheet, Text, View } from '@react-pdf/renderer'
-import { parseText } from '../lib/invoiceText'
+import { parseInline, parseText, type InlineSpan } from '../lib/invoiceText'
 import { formatAmount } from '../lib/money'
 import { formatDate } from '../lib/dates'
-import type { InvoiceRender } from '../types'
+import type { InvoiceKind, InvoiceRender } from '../types'
 
 // Served from public/fonts (Google Fonts, SIL Open Font License). Pinyon Script and
 // Cormorant Garamond are the logo's fonts; Inter is for everything else.
@@ -18,6 +18,8 @@ Font.register({
   fonts: [
     { src: '/fonts/inter-latin-400-normal.woff', fontWeight: 400 },
     { src: '/fonts/inter-latin-600-normal.woff', fontWeight: 600 },
+    { src: '/fonts/inter-latin-400-italic.woff', fontWeight: 400, fontStyle: 'italic' },
+    { src: '/fonts/inter-latin-600-italic.woff', fontWeight: 600, fontStyle: 'italic' },
   ],
 })
 Font.register({ family: 'Pinyon', src: '/fonts/pinyon-script-latin-400-normal.woff' })
@@ -64,6 +66,7 @@ const s = StyleSheet.create({
   bulletRow:  { flexDirection: 'row' },
   bulletDot:  { width: 10 },
   section:    { marginTop: 22 },
+  termsHead:  { fontSize: 10, fontWeight: 600, letterSpacing: 1.2, marginBottom: 10 },
   watermark:  { position: 'absolute', top: 330, left: 60, fontSize: 120, fontWeight: 600, color: ROSE, opacity: 0.08, transform: 'rotate(-35deg)', letterSpacing: 10 },
   // Placed from the top (A4 is 842pt tall): with `bottom`, react-pdf 4.9 drops the page-number
   // text when the page sets a lineHeight.
@@ -72,19 +75,52 @@ const s = StyleSheet.create({
 
 type TextStyle = (typeof s)[keyof typeof s]
 
-// Plain text where "- " lines are bullets (see invoiceText.ts).
+function spanStyle(span: InlineSpan) {
+  return {
+    ...(span.bold ? { fontWeight: 600 } : {}),
+    ...(span.italic ? { fontStyle: 'italic' as const } : {}),
+    ...(span.underline ? { textDecoration: 'underline' as const } : {}),
+  }
+}
+
+function inlineSpans(text: string) {
+  return parseInline(text).map((span, i) => <Text key={i} style={spanStyle(span)}>{span.text}</Text>)
+}
+
+// Plain text where "- " lines are bullets and markers style words (see invoiceText.ts).
 function RichText({ text, style }: { text: string; style?: TextStyle }) {
   return (
     <View>
       {parseText(text).map((block, i) => block.bullet ? (
         <View key={i} style={s.bulletRow}>
           <Text style={style ? [s.bulletDot, style] : s.bulletDot}>•</Text>
-          <Text style={style ? [{ flex: 1 }, style] : { flex: 1 }}>{block.text}</Text>
+          <Text style={style ? [{ flex: 1 }, style] : { flex: 1 }}>{inlineSpans(block.text)}</Text>
         </View>
       ) : (
-        <Text key={i} style={style}>{block.text}</Text>
+        <Text key={i} style={style}>{inlineSpans(block.text)}</Text>
       ))}
     </View>
+  )
+}
+
+const KIND_WORDING: Record<InvoiceKind, string> = {
+  full:    'Full payment',
+  deposit: 'Booking deposit',
+  final:   'Final payment',
+}
+
+// What every page carries. fixed: repeated if a page overflows onto another.
+function PageFurniture({ data }: { data: InvoiceRender }) {
+  const draft = !data.invoiceNo
+  return (
+    <>
+      {draft && <Text fixed style={s.watermark}>DRAFT</Text>}
+      <View fixed style={s.footer}>
+        <Text>{data.business.businessName}</Text>
+        <Text render={({ pageNumber, totalPages }) =>
+          `${draft ? 'Draft' : data.invoiceNo} · page ${pageNumber} of ${totalPages}`} />
+      </View>
+    </>
   )
 }
 
@@ -97,13 +133,7 @@ export default function InvoiceDocument({ data }: { data: InvoiceRender }) {
   return (
     <Document title={draft ? 'Draft invoice' : data.invoiceNo} author={b.businessName || undefined}>
       <Page size="A4" style={s.page}>
-        {/* fixed: repeated on every page of a long invoice. */}
-        {draft && <Text fixed style={s.watermark}>DRAFT</Text>}
-        <View fixed style={s.footer}>
-          <Text>{b.businessName}</Text>
-          <Text render={({ pageNumber, totalPages }) =>
-            `${draft ? 'Draft' : data.invoiceNo} · page ${pageNumber} of ${totalPages}`} />
-        </View>
+        <PageFurniture data={data} />
 
         <View style={s.header}>
           <View>
@@ -115,7 +145,7 @@ export default function InvoiceDocument({ data }: { data: InvoiceRender }) {
             <Text style={s.metaStrong}>{draft ? 'Draft (not yet issued)' : data.invoiceNo}</Text>
             <Text style={s.meta}>{formatDate(data.date)}</Text>
             <Text style={s.meta}>
-              {data.template === 'rental' ? 'Rental' : 'Bespoke'} · {data.kind === 'deposit' ? 'Booking deposit' : 'Final payment'}
+              {data.template === 'rental' ? 'Rental' : 'Bespoke'} · {KIND_WORDING[data.kind]}
             </Text>
             {data.depositInvoiceNo ? <Text style={s.meta}>Deposit invoice: {data.depositInvoiceNo}</Text> : null}
             {data.replaces ? <Text style={s.meta}>Replaces {data.replaces}</Text> : null}
@@ -163,8 +193,8 @@ export default function InvoiceDocument({ data }: { data: InvoiceRender }) {
         ))}
 
         <View style={{ marginTop: 8 }} wrap={false}>
-          {otherTotals.map(row => (
-            <View key={row.label} style={s.totalRow}>
+          {otherTotals.map((row, i) => (
+            <View key={i} style={s.totalRow}>
               <Text style={[s.totalLabel, row.bold ? s.bold : s.muted]}>{row.label}</Text>
               <Text style={s.totalAmt}>{formatAmount(row.amount)}</Text>
             </View>
@@ -188,14 +218,17 @@ export default function InvoiceDocument({ data }: { data: InvoiceRender }) {
           </Text>
         </View>
 
-        {data.terms.trim() ? (
-          <View style={s.section}>
-            <Text style={s.label}>TERMS</Text>
-            <RichText text={data.terms} style={s.muted} />
-          </View>
-        ) : null}
-
       </Page>
+
+      {/* A page of its own, not a page break: the table header above is fixed,
+          so on a continued page it would print over the terms. */}
+      {data.terms.trim() ? (
+        <Page size="A4" style={s.page}>
+          <PageFurniture data={data} />
+          <Text style={s.termsHead}>TERMS &amp; CONDITIONS</Text>
+          <RichText text={data.terms} style={s.muted} />
+        </Page>
+      ) : null}
     </Document>
   )
 }

@@ -133,15 +133,20 @@ npm test         # Vitest, for the pure domain modules in src/lib
   SGT. Numbers must never repeat. The last number issued from the Google Sheet was
   UA-2026-1820, so the database counter (`invoice_counter`, 0006) starts at 1821.
   Only `issue_invoice()` assigns numbers.
-- **Invoice kinds:** template `rental` | `bespoke`, type `deposit` | `final`.
-  - Deposit: subtotal, 50% booking deposit, amount payable = 50%.
-  - Final (bespoke): remaining 50%.
-  - Final (rental): remaining 50% plus a refundable security deposit equal to that
-    50%, so the amount payable equals the subtotal.
-  - The booking deposit is 50% rounded to the cent; the remaining balance is the
-    subtotal minus that deposit, so the two invoices always add up to the subtotal.
+- **Invoice kinds:** template `rental` | `bespoke`, type `full` | `deposit` | `final`.
+  The type sets the wording on the PDF and whether a final links to its deposit. It
+  doesn't drive any money.
+- **Invoice totals:** service lines add up to the subtotal. Optional payment rows
+  below it each add or subtract: `amount payable = subtotal + adds - deducts`. There
+  is no fixed deposit percentage. Esther decides each row.
+  - Service lines and payment rows share `invoice_line_items`, told apart by
+    `line_type` (`service` | `add` | `deduct`). Lib code exposes them separately as
+    `lines` and `adjustments`.
+  - A refundable security deposit is an `add` row, which keeps it distinguishable
+    from revenue if the P&L ever reads invoices.
   - The one implementation is `buildTotalsRows` in `src/lib/invoiceTotals.ts`, with
-    tests. `issue_invoice()` stores its rows and checks the subtotal against the lines.
+    tests. `issue_invoice()` stores its rows, and checks both the subtotal and the
+    amount payable against the stored rows.
 - **Invoice lifecycle:** `draft → issued → void`.
   - Draft PDFs carry a "DRAFT" watermark and no number.
   - The issued PDF is uploaded to Supabase Storage. It is the record of what the
@@ -149,12 +154,15 @@ npm test         # Vitest, for the pure domain modules in src/lib
 - **Where custom wording goes on an invoice:**
   - The description of each line item.
   - An optional client note under the client details.
-  - A terms section. It starts from the default terms for that template (rental or
-    bespoke) and can be edited for each invoice.
+  - A terms section, printed on its own page. It starts from the default terms for
+    that template (rental or bespoke) and can be edited for each invoice.
   - Owner-editable data in the app, not code: a clause library of reusable snippets,
-    the default terms, and business details (PayNow, bank, address).
+    a service library of standard line items, the default terms, and business details
+    (PayNow, bank, address).
   - Text formatting: plain multi-line text, where lines that start with `- ` become
-    bullets. Hold off on a rich-text editor until it's clearly needed.
+    bullets and `**bold**`, `*italic*` and `__underline__` style words. Everything
+    reads it through `src/lib/invoiceText.ts`. See the Decisions entry before
+    replacing it with a rich-text editor.
   - Changing the defaults never changes invoices that were already issued.
 - **Who changes what:** Esther edits invoice content and settings in the app. PDF
   layout, new fields, and calculation rules are code changes.
@@ -221,6 +229,21 @@ Ask before you:
 - Disable RLS or add a permissive `using (true)` policy to make something work.
 
 ## Decisions
+
+- **2026-11-08: invoice totals come from rows Esther adds, not a 50% rule.**
+  - Why: she may collect in full upfront or vary the deposit and security deposit.
+  - What it costs: row amounts are fixed figures, so one doesn't follow if a service
+    price changes afterwards. The Totals box and the issue confirmation show the result.
+  - Invoices issued under the 50% rule keep their frozen totals. Reissuing one
+    recreates equivalent rows (`adjustmentsForReissue`) so the amount carries over.
+
+- **2026-11-08: bold, italic and underline are text markers with a toolbar and
+  preview, not a what-you-see editor.**
+  - Why: the text stays plain, so existing terms keep working and it's frozen on
+    issue like any other text, with no new dependency.
+  - What it costs: Esther sees the markers while editing, with the formatted result
+    directly below.
+  - Revisit if the markers confuse her in real use.
 
 - **2026-10-10: invoices are generated as PDFs, not Google Docs.**
   - Why:

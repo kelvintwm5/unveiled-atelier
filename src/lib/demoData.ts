@@ -3,7 +3,7 @@
 
 import type {
   Transaction, IrasSummary, MonthlySummary, PnlTotals, Client, ClientActivity, Invoice, InvoiceClause,
-  InvoiceSettings,
+  InvoiceService, InvoiceSettings,
 } from '../types'
 
 // Fixed ids, so React keys stay stable. Demo data never reaches the database.
@@ -248,6 +248,7 @@ export const DEMO_INVOICES: Invoice[] = [
     lines: [
       { title: 'Lace-edged veil rental', description: 'Chapel length, ivory.', quantity: 1, unitAmount: 180 },
     ],
+    adjustments: [{ label: 'Balance due later', direction: 'deduct', amount: 90 }],
     invoiceNo: '', issuedOn: '', subtotal: null, amountPayable: null, totals: null, business: null,
     createdAt: '2025-05-02T10:00:00+08:00',
   },
@@ -265,11 +266,12 @@ export const DEMO_INVOICES: Invoice[] = [
       { title: 'Bespoke cathedral veil', description: '- Hand-applied French lace border\n- Scattered pearls', quantity: 1, unitAmount: 1650 },
       { title: 'Blusher layer', description: '', quantity: 1, unitAmount: 150 },
     ],
+    adjustments: [{ label: 'Balance due later', direction: 'deduct', amount: 900 }],
     invoiceNo: 'UA-2025-1803', issuedOn: '2025-01-06', subtotal: 1800, amountPayable: 900,
     totals: [
-      { label: 'Subtotal',                       amount: 1800, bold: false },
-      { label: 'Booking Deposit Required (50%)', amount: 900,  bold: false },
-      { label: 'Amount Payable Now',             amount: 900,  bold: true  },
+      { label: 'Subtotal',           amount: 1800, bold: false },
+      { label: 'Balance due later',  amount: -900, bold: false },
+      { label: 'Amount Payable Now', amount: 900,  bold: true  },
     ],
     business: DEMO_BUSINESS,
     createdAt: '2025-01-06T11:00:00+08:00',
@@ -287,11 +289,16 @@ export const DEMO_INVOICES: Invoice[] = [
       { title: 'Pearl-trim veil rental', description: 'Fingertip length.', quantity: 1, unitAmount: 200 },
       { title: 'Hair comb', description: '', quantity: 2, unitAmount: 20 },
     ],
+    adjustments: [
+      { label: 'Less: deposit paid (UA-2025-1801)', direction: 'deduct', amount: 120 },
+      { label: 'Refundable security deposit',       direction: 'add',    amount: 120 },
+    ],
     invoiceNo: 'UA-2025-1802', issuedOn: '2025-05-28', subtotal: 240, amountPayable: 240,
     totals: [
-      { label: 'Remaining Balance (50%)',       amount: 120, bold: false },
-      { label: 'Security Deposit (Refundable)', amount: 120, bold: false },
-      { label: 'Amount Payable Now',            amount: 240, bold: true  },
+      { label: 'Subtotal',                          amount: 240,  bold: false },
+      { label: 'Less: deposit paid (UA-2025-1801)', amount: -120, bold: false },
+      { label: 'Refundable security deposit',       amount: 120,  bold: false },
+      { label: 'Amount Payable Now',                amount: 240,  bold: true  },
     ],
     business: DEMO_BUSINESS,
     createdAt: '2025-05-28T15:00:00+08:00',
@@ -309,15 +316,25 @@ export const DEMO_INVOICES: Invoice[] = [
       { title: 'Pearl-trim veil rental', description: 'Fingertip length.', quantity: 1, unitAmount: 200 },
       { title: 'Hair comb', description: '', quantity: 2, unitAmount: 20 },
     ],
+    adjustments: [{ label: 'Balance due later', direction: 'deduct', amount: 120 }],
     invoiceNo: 'UA-2025-1801', issuedOn: '2025-01-03', subtotal: 240, amountPayable: 120,
     totals: [
-      { label: 'Subtotal',                       amount: 240, bold: false },
-      { label: 'Booking Deposit Required (50%)', amount: 120, bold: false },
-      { label: 'Amount Payable Now',             amount: 120, bold: true  },
+      { label: 'Subtotal',           amount: 240,  bold: false },
+      { label: 'Balance due later',  amount: -120, bold: false },
+      { label: 'Amount Payable Now', amount: 120,  bold: true  },
     ],
     business: DEMO_BUSINESS,
     createdAt: '2025-01-03T09:30:00+08:00',
   },
+]
+
+export const DEMO_SERVICES: InvoiceService[] = [
+  { id: '00000000-0000-4000-c000-000000000001', title: 'Lace-edged veil rental',
+    description: '- Chapel length, ivory\n- Includes professional steaming before collection',
+    defaultAmount: 180 },
+  { id: '00000000-0000-4000-c000-000000000002', title: 'Bespoke cathedral veil',
+    description: '- Made to measure\n- Design consultation and two fittings included',
+    defaultAmount: null },
 ]
 
 export const DEMO_CLAUSES: InvoiceClause[] = [

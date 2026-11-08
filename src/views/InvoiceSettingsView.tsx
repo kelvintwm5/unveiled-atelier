@@ -1,14 +1,18 @@
 import { useState } from 'react'
 import { updateInvoiceSettings, saveClause, deleteClause } from '../lib/invoices'
-import type { InvoiceClause, InvoiceSettings } from '../types'
+import ServiceLibrary from '../components/ServiceLibrary'
+import TermsEditor from '../components/TermsEditor'
+import type { InvoiceClause, InvoiceService, InvoiceSettings } from '../types'
 
 interface Props {
   mode: 'demo' | 'app'
   settings: InvoiceSettings
   clauses: InvoiceClause[]
+  services: InvoiceService[]
   onBack: () => void
   onSaved: (settings: InvoiceSettings) => void
   onClausesChanged: (clauses: InvoiceClause[]) => void
+  onServicesChanged: (services: InvoiceService[]) => void
 }
 
 // Text fields, in the order they appear. Multi-line ones get a textarea.
@@ -26,7 +30,9 @@ const BUSINESS_FIELDS: { key: keyof InvoiceSettings; label: string; placeholder:
 // Business details and default terms. These are data Esther edits, not code: an
 // invoice copies them when it's drafted (terms) or issued (business details), so
 // changing them here never alters an invoice that was already sent.
-export default function InvoiceSettingsView({ mode, settings, clauses, onBack, onSaved, onClausesChanged }: Props) {
+export default function InvoiceSettingsView({
+  mode, settings, clauses, services, onBack, onSaved, onClausesChanged, onServicesChanged,
+}: Props) {
   const [form, setForm]     = useState<InvoiceSettings>(settings)
   const [saving, setSaving] = useState(false)
   const [error, setError]   = useState<string | null>(null)
@@ -107,27 +113,26 @@ export default function InvoiceSettingsView({ mode, settings, clauses, onBack, o
 
           <section>
             <h3 className="text-xs font-semibold text-stone-500 uppercase tracking-wider mb-3">Default Terms</h3>
-            <div className="space-y-3">
-              <label className="block">
-                <span className="block text-xs font-medium text-stone-500 mb-1.5">Rental invoices</span>
-                <textarea
-                  value={form.defaultTermsRental} rows={5}
-                  onChange={e => set('defaultTermsRental', e.target.value)}
-                  className={`${inputCls} resize-y`}
+            <div className="space-y-4">
+              <div>
+                <p className="text-xs font-medium text-stone-500 mb-1.5">Rental invoices</p>
+                <TermsEditor
+                  ariaLabel="Rental default terms"
+                  value={form.defaultTermsRental}
+                  onChange={v => set('defaultTermsRental', v)}
                 />
-              </label>
-              <label className="block">
-                <span className="block text-xs font-medium text-stone-500 mb-1.5">Bespoke invoices</span>
-                <textarea
-                  value={form.defaultTermsBespoke} rows={5}
-                  onChange={e => set('defaultTermsBespoke', e.target.value)}
-                  className={`${inputCls} resize-y`}
+              </div>
+              <div>
+                <p className="text-xs font-medium text-stone-500 mb-1.5">Bespoke invoices</p>
+                <TermsEditor
+                  ariaLabel="Bespoke default terms"
+                  value={form.defaultTermsBespoke}
+                  onChange={v => set('defaultTermsBespoke', v)}
                 />
-              </label>
+              </div>
             </div>
             <p className="text-xs text-stone-400 mt-2">
               A new draft starts with these, and each invoice's terms can then be edited.
-              Lines starting with “- ” print as bullets.
             </p>
           </section>
 
@@ -144,6 +149,7 @@ export default function InvoiceSettingsView({ mode, settings, clauses, onBack, o
             {saving ? 'Saving…' : 'Save Settings'}
           </button>
 
+          <ServiceLibrary mode={mode} services={services} onChanged={onServicesChanged} />
           <ClauseLibrary mode={mode} clauses={clauses} onChanged={onClausesChanged} />
         </div>
       </div>
@@ -217,15 +223,15 @@ function ClauseLibrary({ mode, clauses, onChanged }: {
           className={inputCls}
         />
       </label>
-      <label className="block">
-        <span className="block text-xs font-medium text-stone-500 mb-1.5">Wording (printed on the invoice)</span>
-        <textarea
+      <div>
+        <p className="text-xs font-medium text-stone-500 mb-1.5">Wording (printed on the invoice)</p>
+        <TermsEditor
+          ariaLabel="Clause wording"
           value={body} rows={3}
-          onChange={e => setBody(e.target.value)}
+          onChange={setBody}
           placeholder="- Late returns are charged S$20 per day."
-          className={`${inputCls} resize-y`}
         />
-      </label>
+      </div>
       <div className="flex gap-3">
         <button
           type="button" onClick={handleSave} disabled={busy}

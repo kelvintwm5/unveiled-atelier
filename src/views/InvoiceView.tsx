@@ -3,8 +3,9 @@ import {
   listInvoices, getInvoiceSettings, saveDraft, deleteDraft, issueInvoice, voidInvoice,
   startReplacement, blankDraft, toDraft, finalFromDeposit, defaultTerms, issueProblem,
   draftTotals, depositsAwaitingFinal, replacementOf, payableOf, storeIssuedPdf, getIssuedPdf, listClauses,
+  listServices,
 } from '../lib/invoices'
-import { lineTotal, calcSubtotal } from '../lib/invoiceTotals'
+import { lineTotal, calcSubtotal, halfBalance } from '../lib/invoiceTotals'
 import { renderFromDraft } from '../lib/invoiceRender'
 import { appendText } from '../lib/invoiceText'
 import { renderInvoicePdf, openPdf } from '../lib/invoicePdf'
@@ -12,8 +13,11 @@ import { listClients, clientLabels } from '../lib/clientData'
 import { formatSGD } from '../lib/money'
 import { formatDate, todaySgt } from '../lib/dates'
 import InvoiceSettingsView from './InvoiceSettingsView'
+import FormattedText from '../components/FormattedText'
+import TermsEditor from '../components/TermsEditor'
 import type {
-  Client, Invoice, InvoiceClause, InvoiceDraft, InvoiceKind, InvoiceLine, InvoiceSettings, InvoiceTemplate,
+  Client, Invoice, InvoiceAdjustment, InvoiceClause, InvoiceDraft, InvoiceKind, InvoiceLine, InvoiceService,
+  InvoiceSettings, InvoiceTemplate,
 } from '../types'
 
 interface Props {
@@ -38,7 +42,7 @@ const WIDE_SCREEN = '(min-width: 1024px)'
 const EMPTY_LINE = (): InvoiceLine => ({ title: '', description: '', quantity: 1, unitAmount: 0 })
 
 const TEMPLATE_LABEL: Record<InvoiceTemplate, string> = { rental: 'Rental', bespoke: 'Bespoke' }
-const KIND_LABEL: Record<InvoiceKind, string> = { deposit: 'Deposit', final: 'Final' }
+const KIND_LABEL: Record<InvoiceKind, string> = { full: 'Full payment', deposit: 'Deposit', final: 'Final' }
 
 function errorText(err: unknown): string {
   return err instanceof Error ? err.message : String(err)
@@ -49,14 +53,15 @@ export default function InvoiceView({ mode }: Props) {
   const [settings, setSettings] = useState<InvoiceSettings | null>(null)
   const [clients, setClients]   = useState<Client[]>([])
   const [clauses, setClauses]   = useState<InvoiceClause[]>([])
+  const [services, setServices] = useState<InvoiceService[]>([])
   const [loading, setLoading]   = useState(true)
   const [error, setError]       = useState<string | null>(null)
   const [screen, setScreen]     = useState<Screen>({ name: 'list' })
 
   function reload(): Promise<void> {
     setError(null)
-    return Promise.all([listInvoices(mode), getInvoiceSettings(mode), listClients(mode), listClauses(mode)])
-      .then(([inv, s, c, cl]) => { setInvoices(inv); setSettings(s); setClients(c); setClauses(cl) })
+    return Promise.all([listInvoices(mode), getInvoiceSettings(mode), listClients(mode), listClauses(mode), listServices(mode)])
+      .then(([inv, s, c, cl, sv]) => { setInvoices(inv); setSettings(s); setClients(c); setClauses(cl); setServices(sv) })
       .catch(e => setError(errorText(e)))
       .finally(() => setLoading(false))
   }
@@ -97,9 +102,11 @@ export default function InvoiceView({ mode }: Props) {
         mode={mode}
         settings={settings}
         clauses={clauses}
+        services={services}
         onBack={() => setScreen({ name: 'list' })}
         onSaved={setSettings}
         onClausesChanged={setClauses}
+        onServicesChanged={setServices}
       />
     )
   }
@@ -115,6 +122,7 @@ export default function InvoiceView({ mode }: Props) {
         clients={clients}
         settings={settings}
         clauses={clauses}
+        services={services}
         onBack={() => { setScreen({ name: 'list' }); reload() }}
         onSaved={openSaved}
         onDeleted={() => { setScreen({ name: 'list' }); reload() }}
@@ -242,7 +250,7 @@ function InvoiceList({ mode, invoices, error, onNew, onOpen, onSettings }: {
 
 // ─── Draft editor ──────────────────────────────────────────────────────────────
 
-function DraftEditor({ mode, id, initial, invoices, clients, settings, clauses, onBack, onSaved, onDeleted }: {
+function DraftEditor({ mode, id, initial, invoices, clients, settings, clauses, services, onBack, onSaved, onDeleted }: {
   mode: 'demo' | 'app'
   id: string | null
   initial: InvoiceDraft
@@ -250,6 +258,7 @@ function DraftEditor({ mode, id, initial, invoices, clients, settings, clauses, 
   clients: Client[]
   settings: InvoiceSettings
   clauses: InvoiceClause[]
+  services: InvoiceService[]
   onBack: () => void
   onSaved: (inv: Invoice, notice?: string) => Promise<void>
   onDeleted: () => void
@@ -331,7 +340,8 @@ function DraftEditor({ mode, id, initial, invoices, clients, settings, clauses, 
   }
 
   function setKind(kind: InvoiceKind) {
-    update(kind === 'deposit' ? { kind, depositInvoiceId: '', legacyDepositNo: '' } : { kind })
+    // Only a final links to a deposit.
+    update(kind === 'final' ? { kind } : { kind, depositInvoiceId: '', legacyDepositNo: '' })
   }
 
   function pickDeposit(depositId: string) {
@@ -444,7 +454,7 @@ function DraftEditor({ mode, id, initial, invoices, clients, settings, clauses, 
             )}
 
             <Section title="Invoice Type">
-              <div className="grid grid-cols-2 gap-3">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 <SegmentGroup
                   label="Template"
                   options={[{ value: 'rental', label: 'Rental' }, { value: 'bespoke', label: 'Bespoke' }]}
@@ -453,7 +463,11 @@ function DraftEditor({ mode, id, initial, invoices, clients, settings, clauses, 
                 />
                 <SegmentGroup
                   label="Invoice"
-                  options={[{ value: 'deposit', label: '1st — Deposit' }, { value: 'final', label: '2nd — Final' }]}
+                  options={[
+                    { value: 'full', label: 'Full payment' },
+                    { value: 'deposit', label: 'Deposit' },
+                    { value: 'final', label: 'Final' },
+                  ]}
                   value={draft.kind}
                   onChange={v => setKind(v as InvoiceKind)}
                 />
@@ -465,7 +479,7 @@ function DraftEditor({ mode, id, initial, invoices, clients, settings, clauses, 
                 <div className="space-y-3">
                   <p className="text-xs text-stone-500">
                     A final invoice collects the rest of a deposit invoice's total. Pick the deposit
-                    to copy its client, dates and line items.
+                    to copy its client, dates and line items, and take off what it billed.
                   </p>
                   <Field label="Deposit invoice">
                     <select
@@ -554,6 +568,7 @@ function DraftEditor({ mode, id, initial, invoices, clients, settings, clauses, 
                     index={idx}
                     canRemove={draft.lines.length > 1}
                     clauses={clauses}
+                    services={services}
                     onChange={patch => updateLine(idx, patch)}
                     onRemove={() => update({ lines: draft.lines.filter((_, i) => i !== idx) })}
                   />
@@ -571,6 +586,15 @@ function DraftEditor({ mode, id, initial, invoices, clients, settings, clauses, 
               </div>
             </Section>
 
+            <Section title="Payment">
+              <PaymentRows
+                rows={draft.adjustments}
+                subtotal={subtotal}
+                collectsEverything={draft.kind !== 'full' && draft.adjustments.length === 0 && subtotal > 0}
+                onChange={adjustments => update({ adjustments })}
+              />
+            </Section>
+
             {subtotal > 0 && (
               <Section title="Totals">
                 <TotalsTable rows={totals} />
@@ -578,15 +602,14 @@ function DraftEditor({ mode, id, initial, invoices, clients, settings, clauses, 
             )}
 
             <Section title="Terms">
-              <textarea
-                value={draft.terms} rows={5}
-                onChange={e => update({ terms: e.target.value })}
+              <TermsEditor
+                ariaLabel="Terms"
+                value={draft.terms}
+                onChange={terms => update({ terms })}
                 placeholder="No default terms yet for this template."
-                className={`${inputCls} resize-y`}
               />
               <ClausePicker clauses={clauses} onPick={body => update({ terms: appendText(draft.terms, body) })} />
-              <div className="flex flex-wrap justify-between gap-2 mt-1.5">
-                <p className="text-xs text-stone-400">Lines starting with “- ” print as bullets.</p>
+              <div className="flex justify-end mt-1.5">
                 {draft.terms !== defaultTerms(settings, draft.template) && (
                   <button
                     type="button"
@@ -804,7 +827,7 @@ function IssuedInvoice({ mode, invoice, invoices, notice, onBack, onOpen, onChan
               {invoice.clientPhone && <p>{invoice.clientPhone}</p>}
               {invoice.pwsDate && <p className="text-stone-500">PWS Date: {formatDate(invoice.pwsDate)}</p>}
               {invoice.weddingDate && <p className="text-stone-500">Wedding Date: {formatDate(invoice.weddingDate)}</p>}
-              {invoice.clientNote && <p className="text-stone-500 whitespace-pre-line pt-1">{invoice.clientNote}</p>}
+              {invoice.clientNote && <FormattedText text={invoice.clientNote} className="text-stone-500 pt-1" />}
             </div>
           </Section>
 
@@ -814,7 +837,7 @@ function IssuedInvoice({ mode, invoice, invoices, notice, onBack, onOpen, onChan
                 <li key={i} className="px-4 py-3 flex gap-3 text-sm">
                   <div className="flex-1 min-w-0">
                     <p className="font-medium text-stone-800">{l.title}</p>
-                    {l.description && <p className="text-stone-500 whitespace-pre-line">{l.description}</p>}
+                    {l.description && <FormattedText text={l.description} className="text-stone-500" />}
                   </div>
                   <span className="text-stone-400 shrink-0">×{l.quantity}</span>
                   <span className="text-stone-700 shrink-0">{formatSGD(lineTotal(l))}</span>
@@ -832,7 +855,7 @@ function IssuedInvoice({ mode, invoice, invoices, notice, onBack, onOpen, onChan
 
           {invoice.terms && (
             <Section title="Terms">
-              <p className="text-sm text-stone-600 whitespace-pre-line">{invoice.terms}</p>
+              <FormattedText text={invoice.terms} className="text-sm text-stone-600" />
             </Section>
           )}
 
@@ -975,9 +998,10 @@ function LinkButton({ onClick, children }: { onClick: () => void; children: Reac
 function TotalsTable({ rows }: { rows: { label: string; amount: number; bold: boolean }[] }) {
   return (
     <div className="bg-stone-50 rounded-xl border border-stone-200 divide-y divide-stone-200">
-      {rows.map(row => (
+      {/* By position: two rows can share a label now that Esther writes them. */}
+      {rows.map((row, i) => (
         <div
-          key={row.label}
+          key={i}
           className={`flex justify-between gap-3 px-4 py-2.5 text-sm ${
             row.bold ? 'font-semibold text-stone-800' : 'text-stone-600'
           }`}
@@ -1088,8 +1112,135 @@ function ClausePicker({ clauses, onPick }: { clauses: InvoiceClause[]; onPick: (
   )
 }
 
-function LineItemRow({ line, index, canRemove, clauses, onChange, onRemove }: {
-  line: InvoiceLine; index: number; canRemove: boolean; clauses: InvoiceClause[]
+// Fills a line from the service library. It's a copy, so editing the library later
+// doesn't touch this invoice, and the line can still be changed here. A service
+// with no standard price leaves whatever amount is already typed.
+function ServicePicker({ services, onPick }: {
+  services: InvoiceService[]
+  onPick: (patch: Partial<InvoiceLine>) => void
+}) {
+  if (services.length === 0) return null
+  return (
+    <select
+      value=""
+      onChange={e => {
+        const s = services.find(x => x.id === e.target.value)
+        if (!s) return
+        onPick({
+          title: s.title,
+          description: s.description,
+          ...(s.defaultAmount === null ? {} : { unitAmount: s.defaultAmount }),
+        })
+      }}
+      aria-label="Choose a saved service"
+      className="col-span-2 max-w-full text-sm text-rose-800 bg-white border border-rose-200 rounded-lg px-2 py-2
+                 focus:outline-none focus:ring-2 focus:ring-rose-300"
+    >
+      <option value="">Choose a saved service…</option>
+      {services.map(s => <option key={s.id} value={s.id}>{s.title}</option>)}
+    </select>
+  )
+}
+
+// Starting points for the rows Esther adds most. Nothing is applied automatically,
+// and label and amount stay editable, so no rule about deposits lives here.
+const PAYMENT_STARTERS: { label: string; direction: InvoiceAdjustment['direction']; startsAtHalf?: boolean }[] = [
+  { label: 'Balance due later',           direction: 'deduct', startsAtHalf: true },
+  { label: 'Less: deposit paid',          direction: 'deduct' },
+  { label: 'Refundable security deposit', direction: 'add' },
+]
+
+function PaymentRows({ rows, subtotal, collectsEverything, onChange }: {
+  rows: InvoiceAdjustment[]
+  subtotal: number
+  collectsEverything: boolean
+  onChange: (rows: InvoiceAdjustment[]) => void
+}) {
+  function patch(idx: number, change: Partial<InvoiceAdjustment>) {
+    onChange(rows.map((r, i) => (i === idx ? { ...r, ...change } : r)))
+  }
+
+  return (
+    <div className="space-y-3">
+      {rows.length === 0 && (
+        <p className="text-xs text-stone-500">
+          {collectsEverything
+            ? 'No rows yet, so this invoice collects the full amount. Add a row to collect only part of it now.'
+            : 'Optional. Add a row for anything that changes what the client pays now.'}
+        </p>
+      )}
+
+      {rows.map((row, idx) => (
+        <div key={idx} className="bg-stone-50 border border-stone-200 rounded-xl p-4">
+          <div className="flex items-start gap-2">
+            <div className="flex-1 min-w-0 grid grid-cols-2 gap-3">
+              <Field label="Label (printed on the invoice) *" className="col-span-2">
+                <input
+                  type="text" value={row.label}
+                  onChange={e => patch(idx, { label: e.target.value })}
+                  placeholder="e.g. Refundable security deposit"
+                  className={inputCls}
+                />
+              </Field>
+              <SegmentGroup
+                label="This row"
+                options={[{ value: 'deduct', label: 'Subtract' }, { value: 'add', label: 'Add' }]}
+                value={row.direction}
+                onChange={v => patch(idx, { direction: v as InvoiceAdjustment['direction'] })}
+              />
+              <Field label="Amount (SGD) *">
+                <input
+                  type="number" inputMode="decimal" min={0.01} step={0.01} value={row.amount || ''}
+                  onChange={e => patch(idx, { amount: parseFloat(e.target.value) || 0 })}
+                  placeholder="0.00"
+                  className={inputCls}
+                />
+              </Field>
+            </div>
+            <button
+              type="button" onClick={() => onChange(rows.filter((_, i) => i !== idx))}
+              aria-label={`Remove payment row ${idx + 1}`}
+              className="text-stone-300 hover:text-red-400 transition-colors pt-2"
+            >
+              <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+              </svg>
+            </button>
+          </div>
+        </div>
+      ))}
+
+      <div className="flex flex-wrap gap-2">
+        {PAYMENT_STARTERS.map(s => (
+          <button
+            key={s.label}
+            type="button"
+            onClick={() => onChange([...rows, {
+              label: s.label,
+              direction: s.direction,
+              amount: s.startsAtHalf ? halfBalance(subtotal) : 0,
+            }])}
+            className="text-xs text-rose-800 bg-white border border-rose-200 hover:bg-rose-50 rounded-lg
+                       px-2.5 py-1.5 transition-colors"
+          >
+            + {s.label}
+          </button>
+        ))}
+        <button
+          type="button"
+          onClick={() => onChange([...rows, { label: '', direction: 'add', amount: 0 }])}
+          className="text-xs text-stone-600 bg-white border border-stone-200 hover:bg-stone-50 rounded-lg
+                     px-2.5 py-1.5 transition-colors"
+        >
+          + Other
+        </button>
+      </div>
+    </div>
+  )
+}
+
+function LineItemRow({ line, index, canRemove, clauses, services, onChange, onRemove }: {
+  line: InvoiceLine; index: number; canRemove: boolean; clauses: InvoiceClause[]; services: InvoiceService[]
   onChange: (p: Partial<InvoiceLine>) => void; onRemove: () => void
 }) {
   return (
@@ -1097,6 +1248,7 @@ function LineItemRow({ line, index, canRemove, clauses, onChange, onRemove }: {
       <div className="flex items-start gap-2">
         <span className="text-xs text-stone-400 font-medium pt-2.5 shrink-0">#{index + 1}</span>
         <div className="flex-1 min-w-0 grid grid-cols-2 gap-3">
+          <ServicePicker services={services} onPick={onChange} />
           <Field label="Title (bold on the invoice) *" className="col-span-2">
             <input
               type="text" value={line.title}

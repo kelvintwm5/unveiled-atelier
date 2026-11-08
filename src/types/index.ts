@@ -82,7 +82,7 @@ export type NewActivity = Omit<ClientActivity, 'id'>
 
 // Must match the check constraints in supabase/migrations/0006_invoices.sql.
 export type InvoiceTemplate = 'rental' | 'bespoke'
-export type InvoiceKind = 'deposit' | 'final'
+export type InvoiceKind = 'full' | 'deposit' | 'final'
 export type InvoiceStatus = 'draft' | 'issued' | 'void'
 
 export interface InvoiceLine {
@@ -92,11 +92,20 @@ export interface InvoiceLine {
   unitAmount: number     // SGD per unit; the line total is quantity × unitAmount
 }
 
+// A row Esther adds under the subtotal: a booking deposit held back, a deposit
+// already paid, a refundable security deposit. `amount` is never negative;
+// `direction` says which way it moves the amount payable.
+export interface InvoiceAdjustment {
+  label: string
+  direction: 'add' | 'deduct'
+  amount: number         // SGD
+}
+
 // One row of the totals block under the line items. The last row is the amount
 // payable now.
 export interface TotalsRow {
   label: string
-  amount: number         // SGD
+  amount: number         // SGD; negative for a deduction
   bold: boolean
 }
 
@@ -117,6 +126,7 @@ export interface InvoiceDraft {
   legacyDepositNo: string    // final only: a deposit number from before the app, or ''
   replacesInvoiceId: string  // set on a draft that will replace an issued invoice, or ''
   lines: InvoiceLine[]
+  adjustments: InvoiceAdjustment[]
 }
 
 // The business details printed on an invoice, as they were when it was issued.
@@ -140,6 +150,17 @@ export interface InvoiceClause {
 }
 
 export type NewInvoiceClause = Omit<InvoiceClause, 'id'>
+
+// A standard service Esther picks from when adding a line item. Picking copies it
+// into the line, so editing the library never changes an invoice.
+export interface InvoiceService {
+  id: string
+  title: string
+  description: string
+  defaultAmount: number | null   // null: priced case by case
+}
+
+export type NewInvoiceService = Omit<InvoiceService, 'id'>
 
 export interface InvoiceSettings extends BusinessDetails {
   defaultTermsRental: string

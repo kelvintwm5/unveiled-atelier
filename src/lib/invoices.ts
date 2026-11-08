@@ -3,20 +3,21 @@
 //   demo → an in-memory copy of the fixtures; no network. Drafts and settings
 //          can be edited for the session, but nothing can be issued or voided,
 //          and PDFs are made in the browser without being stored.
-//   app  → the invoices tables and functions in 0006, guarded by RLS
+//   app  → the invoices tables and functions in 0006 and 0009, guarded by RLS
 //
 // The invoice number, the issue date and the freezing of an issued invoice are
-// all decided by the database (issue_invoice() in 0006), never here. The totals
+// all decided by the database (issue_invoice() in 0009), never here. The totals
 // come from invoiceTotals.ts, and the database checks that they add up.
 
 import { getSupabase } from './supabase'
-import { amountPayable, buildTotalsRows, calcSubtotal } from './invoiceTotals'
-import { DEMO_CLAUSES, DEMO_INVOICES, DEMO_INVOICE_SETTINGS } from './demoData'
+import { adjustmentsForReissue, amountPayable, buildTotalsRows, calcSubtotal } from './invoiceTotals'
+import { DEMO_CLAUSES, DEMO_INVOICES, DEMO_INVOICE_SETTINGS, DEMO_SERVICES } from './demoData'
 import { renderFromIssued } from './invoiceRender'
 import { renderInvoicePdf } from './invoicePdf'
 import type {
-  BusinessDetails, Invoice, InvoiceClause, InvoiceDraft, InvoiceKind, InvoiceLine, InvoiceSettings,
-  InvoiceStatus, InvoiceTemplate, NewInvoiceClause, TotalsRow,
+  BusinessDetails, Invoice, InvoiceAdjustment, InvoiceClause, InvoiceDraft, InvoiceKind, InvoiceLine,
+  InvoiceService, InvoiceSettings, InvoiceStatus, InvoiceTemplate, NewInvoiceClause, NewInvoiceService,
+  TotalsRow,
 } from '../types'
 
 type Mode = 'demo' | 'app'
@@ -30,6 +31,7 @@ const demo = {
   invoices: DEMO_INVOICES.map(copyInvoice),
   settings: { ...DEMO_INVOICE_SETTINGS },
   clauses: DEMO_CLAUSES.map(c => ({ ...c })),
+  services: DEMO_SERVICES.map(s => ({ ...s })),
 }
 
 // The private Storage bucket from 0006. Each issued invoice's PDF is stored
@@ -40,6 +42,7 @@ function copyInvoice(inv: Invoice): Invoice {
   return {
     ...inv,
     lines: inv.lines.map(l => ({ ...l })),
+    adjustments: inv.adjustments.map(a => ({ ...a })),
     totals: inv.totals?.map(r => ({ ...r })) ?? null,
     business: inv.business ? { ...inv.business } : null,
   }
@@ -56,6 +59,7 @@ interface LineRow {
   description: string | null
   quantity: number
   unit_amount: Numeric
+  line_type: 'service' | 'add' | 'deduct'
 }
 
 interface InvoiceRow {
@@ -105,7 +109,7 @@ const INVOICE_COLUMNS = `
   pws_date, wedding_date, client_note, terms, deposit_invoice_id, legacy_deposit_no,
   replaces_invoice_id, invoice_no, issued_on, subtotal, amount_payable, totals,
   business_snapshot, pdf_path, voided_at, void_reason, created_at,
-  invoice_line_items ( position, title, description, quantity, unit_amount )`
+  invoice_line_items ( position, title, description, quantity, unit_amount, line_type )`
 
 const SETTINGS_COLUMNS = `
   business_name, address, email, phone, paynow, bank_name, bank_account_name,
@@ -142,6 +146,9 @@ function toBusiness(v: unknown): BusinessDetails | null {
 }
 
 function toInvoice(r: InvoiceRow): Invoice {
+  // The database keeps service lines and payment rows in one table. The rest of
+  // the app treats them as the two different things they are.
+  const rows = [...r.invoice_line_items].sort((a, b) => a.position - b.position)
   return {
     id:                r.id,
     status:            r.status,
@@ -158,14 +165,17 @@ function toInvoice(r: InvoiceRow): Invoice {
     depositInvoiceId:  r.deposit_invoice_id ?? '',
     legacyDepositNo:   r.legacy_deposit_no ?? '',
     replacesInvoiceId: r.replaces_invoice_id ?? '',
-    lines: [...r.invoice_line_items]
-      .sort((a, b) => a.position - b.position)
-      .map(l => ({
-        title:       l.title,
-        description: l.description ?? '',
-        quantity:    l.quantity,
-        unitAmount:  Number(l.unit_amount),
-      })),
+    lines: rows.filter(l => l.line_type === 'service').map(l => ({
+      title:       l.title,
+      description: l.description ?? '',
+      quantity:    l.quantity,
+      unitAmount:  Number(l.unit_amount),
+    })),
+    adjustments: rows.filter(l => l.line_type !== 'service').map(l => ({
+      label:     l.title,
+      direction: l.line_type === 'deduct' ? 'deduct' : 'add',
+      amount:    Number(l.unit_amount),
+    })),
     invoiceNo:     r.invoice_no ?? '',
     issuedOn:      r.issued_on ?? '',
     subtotal:      r.subtotal === null ? null : Number(r.subtotal),
@@ -200,13 +210,25 @@ function fromDraft(d: InvoiceDraft) {
   }
 }
 
-function fromLines(lines: InvoiceLine[]) {
-  return lines.map(l => ({
-    title:       l.title,
-    description: l.description,
-    quantity:    l.quantity,
-    unit_amount: l.unitAmount,
-  }))
+// Service lines first, then payment rows: their order in the list is their
+// position in the table.
+function fromLines(lines: InvoiceLine[], adjustments: InvoiceAdjustment[]) {
+  return [
+    ...lines.map(l => ({
+      title:       l.title,
+      description: l.description,
+      quantity:    l.quantity,
+      unit_amount: l.unitAmount,
+      line_type:   'service',
+    })),
+    ...adjustments.map(a => ({
+      title:       a.label,
+      description: '',
+      quantity:    1,
+      unit_amount: a.amount,
+      line_type:   a.direction,
+    })),
+  ]
 }
 
 function fromSettings(st: InvoiceSettings): SettingsRow {
@@ -244,7 +266,7 @@ function toSettings(r: SettingsRow): InvoiceSettings {
 
 // What a draft needs before it can be saved at all: numbers the database will
 // store without silently rounding.
-function checkLines(lines: InvoiceLine[]): void {
+function checkAmounts(lines: InvoiceLine[], adjustments: InvoiceAdjustment[]): void {
   for (const [i, l] of lines.entries()) {
     if (!Number.isInteger(l.quantity) || l.quantity < 1) {
       throw new Error(`Line ${i + 1}: the quantity must be a whole number of at least 1.`)
@@ -255,6 +277,14 @@ function checkLines(lines: InvoiceLine[]): void {
     // The column keeps 2 decimal places and would silently round anything finer.
     if (Math.round(l.unitAmount * 100) / 100 !== l.unitAmount) {
       throw new Error(`Line ${i + 1}: amounts can have at most 2 decimal places.`)
+    }
+  }
+  for (const [i, a] of adjustments.entries()) {
+    if (!Number.isFinite(a.amount) || a.amount < 0) {
+      throw new Error(`Payment row ${i + 1}: the amount can't be negative. Use Subtract instead.`)
+    }
+    if (Math.round(a.amount * 100) / 100 !== a.amount) {
+      throw new Error(`Payment row ${i + 1}: amounts can have at most 2 decimal places.`)
     }
   }
 }
@@ -269,12 +299,16 @@ export function issueProblem(d: InvoiceDraft): string | null {
   if (d.lines.some(l => !l.title.trim() || !(l.unitAmount > 0))) {
     return 'Every line item needs a title and an amount above zero.'
   }
+  if (d.adjustments.some(a => !a.label.trim() || !(a.amount > 0))) {
+    return 'Every payment row needs a label and an amount above zero.'
+  }
+  if (amountPayable(draftTotals(d)) <= 0) return 'The amount payable must be above zero.'
   return null
 }
 
 /** The totals rows for a draft: what the preview shows and what issuing stores. */
-export function draftTotals(d: Pick<InvoiceDraft, 'template' | 'kind' | 'lines'>): TotalsRow[] {
-  return buildTotalsRows(d.template, d.kind, calcSubtotal(d.lines))
+export function draftTotals(d: Pick<InvoiceDraft, 'lines' | 'adjustments'>): TotalsRow[] {
+  return buildTotalsRows(calcSubtotal(d.lines), d.adjustments)
 }
 
 // ── Reads ──────────────────────────────────────────────────────────────────────
@@ -400,6 +434,84 @@ export async function deleteClause(mode: Mode, id: string): Promise<void> {
   if (!data?.length) throw new Error("Couldn't delete the clause: it no longer exists. Reload the page.")
 }
 
+// ── Service library ────────────────────────────────────────────────────────────
+
+interface ServiceRow {
+  id: string
+  title: string
+  description: string | null
+  default_amount: Numeric | null
+}
+
+const SERVICE_COLUMNS = 'id, title, description, default_amount'
+
+function toService(r: ServiceRow): InvoiceService {
+  return {
+    id:            r.id,
+    title:         r.title,
+    description:   r.description ?? '',
+    defaultAmount: r.default_amount === null ? null : Number(r.default_amount),
+  }
+}
+
+/** The saved services, in the order they were added. */
+export async function listServices(mode: Mode): Promise<InvoiceService[]> {
+  if (mode === 'demo') return demo.services.map(s => ({ ...s }))
+  const { data, error } = await getSupabase()
+    .from('invoice_services')
+    .select(SERVICE_COLUMNS)
+    .order('sort_order')
+    .order('created_at')
+  if (error) throw new Error(`Couldn't load the saved services: ${error.message}`)
+  return (data as ServiceRow[]).map(toService)
+}
+
+/** Adds a service (id null) or changes one. Invoices that already use it keep their copy. */
+export async function saveService(mode: Mode, id: string | null, input: NewInvoiceService): Promise<InvoiceService> {
+  const title = input.title.trim()
+  const description = input.description.replace(/\s+$/, '')
+  const defaultAmount = input.defaultAmount
+  if (!title) throw new Error('Give the service a title.')
+  if (defaultAmount !== null) {
+    if (!Number.isFinite(defaultAmount) || defaultAmount <= 0) {
+      throw new Error('The standard price must be above zero, or left empty.')
+    }
+    if (Math.round(defaultAmount * 100) / 100 !== defaultAmount) {
+      throw new Error('The standard price can have at most 2 decimal places.')
+    }
+  }
+
+  if (mode === 'demo') {
+    const service = { id: id ?? crypto.randomUUID(), title, description, defaultAmount }
+    demo.services = id ? demo.services.map(s => (s.id === id ? service : s)) : [...demo.services, service]
+    return { ...service }
+  }
+
+  const row = { title, description: description || null, default_amount: defaultAmount }
+  const query = id
+    ? getSupabase().from('invoice_services').update(row).eq('id', id)
+    : getSupabase().from('invoice_services').insert(row)
+  // As with clauses: .select() makes an update of a deleted row fail loudly.
+  const { data, error } = await query.select(SERVICE_COLUMNS)
+  if (error) throw new Error(`Couldn't save the service: ${error.message}`)
+  if (!data?.length) throw new Error("Couldn't save the service: it no longer exists. Reload the page.")
+  return toService(data[0] as ServiceRow)
+}
+
+export async function deleteService(mode: Mode, id: string): Promise<void> {
+  if (mode === 'demo') {
+    demo.services = demo.services.filter(s => s.id !== id)
+    return
+  }
+  const { data, error } = await getSupabase()
+    .from('invoice_services')
+    .delete()
+    .eq('id', id)
+    .select('id')
+  if (error) throw new Error(`Couldn't delete the service: ${error.message}`)
+  if (!data?.length) throw new Error("Couldn't delete the service: it no longer exists. Reload the page.")
+}
+
 // ── Drafts ─────────────────────────────────────────────────────────────────────
 
 export function defaultTerms(settings: InvoiceSettings, template: InvoiceTemplate): string {
@@ -410,13 +522,14 @@ export function defaultTerms(settings: InvoiceSettings, template: InvoiceTemplat
 export function blankDraft(settings: InvoiceSettings, template: InvoiceTemplate = 'rental'): InvoiceDraft {
   return {
     template,
-    kind: 'deposit',
+    kind: 'full',
     clientId: '', clientName: '', clientEmail: '', clientPhone: '',
     pwsDate: '', weddingDate: '',
     clientNote: '',
     terms: defaultTerms(settings, template),
     depositInvoiceId: '', legacyDepositNo: '', replacesInvoiceId: '',
     lines: [{ title: '', description: '', quantity: 1, unitAmount: 0 }],
+    adjustments: [],
   }
 }
 
@@ -437,12 +550,14 @@ export function toDraft(inv: Invoice): InvoiceDraft {
     legacyDepositNo:   inv.legacyDepositNo,
     replacesInvoiceId: inv.replacesInvoiceId,
     lines:             inv.lines.map(l => ({ ...l })),
+    adjustments:       inv.adjustments.map(a => ({ ...a })),
   }
 }
 
 /**
  * A final invoice drafted from an issued deposit: same client, template, dates
- * and lines, linked to the deposit by id. Keeps the draft's own terms and note.
+ * and lines, linked to the deposit by id. Starts with the deposit it actually
+ * billed taken off. Keeps the draft's own terms and note.
  */
 export function finalFromDeposit(current: InvoiceDraft, deposit: Invoice): InvoiceDraft {
   return {
@@ -458,6 +573,11 @@ export function finalFromDeposit(current: InvoiceDraft, deposit: Invoice): Invoi
     depositInvoiceId: deposit.id,
     legacyDepositNo:  '',
     lines:            deposit.lines.map(l => ({ ...l })),
+    adjustments: [{
+      label:     `Less: deposit paid (${deposit.invoiceNo})`,
+      direction: 'deduct',
+      amount:    deposit.amountPayable ?? 0,
+    }],
   }
 }
 
@@ -466,7 +586,7 @@ export function finalFromDeposit(current: InvoiceDraft, deposit: Invoice): Invoi
  * id null creates a new draft. Returns the saved invoice.
  */
 export async function saveDraft(mode: Mode, id: string | null, draft: InvoiceDraft): Promise<Invoice> {
-  checkLines(draft.lines)
+  checkAmounts(draft.lines, draft.adjustments)
   if (mode === 'demo') {
     const existing = id ? demo.invoices.find(i => i.id === id) : undefined
     if (id && existing?.status !== 'draft') throw new Error('Only a draft can be edited.')
@@ -478,6 +598,7 @@ export async function saveDraft(mode: Mode, id: string | null, draft: InvoiceDra
       }),
       ...draft,
       lines: draft.lines.map(l => ({ ...l })),
+      adjustments: draft.adjustments.map(a => ({ ...a })),
     }
     demo.invoices = [...demo.invoices.filter(i => i.id !== saved.id), saved]
     return copyInvoice(saved)
@@ -486,7 +607,7 @@ export async function saveDraft(mode: Mode, id: string | null, draft: InvoiceDra
   const { data, error } = await getSupabase().rpc('save_invoice_draft', {
     p_id: id,
     p_invoice: fromDraft(draft),
-    p_lines: fromLines(draft.lines),
+    p_lines: fromLines(draft.lines, draft.adjustments),
   })
   if (error) throw new Error(`Couldn't save the draft: ${error.message}`)
   return getInvoice(mode, data as string)
@@ -516,7 +637,11 @@ export async function deleteDraft(mode: Mode, id: string): Promise<void> {
  */
 export async function startReplacement(mode: Mode, original: Invoice): Promise<Invoice> {
   if (original.status !== 'issued') throw new Error('Only an issued invoice can be replaced.')
-  return saveDraft(mode, null, { ...toDraft(original), replacesInvoiceId: original.id })
+  return saveDraft(mode, null, {
+    ...toDraft(original),
+    adjustments: adjustmentsForReissue(original),
+    replacesInvoiceId: original.id,
+  })
 }
 
 // ── Issuing and voiding ────────────────────────────────────────────────────────
