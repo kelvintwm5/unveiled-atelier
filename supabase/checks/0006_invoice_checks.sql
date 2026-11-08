@@ -1,6 +1,9 @@
 -- Checks for the invoice tables and functions in 0006. Not a migration: run it by
 -- hand in the Supabase SQL editor after applying 0006, or whenever they change.
 --
+-- Written for the 50% rule that 0009 removed, so its issue_invoice() calls fail once
+-- 0009 is applied. From then on use 0009_invoice_payment_checks.sql.
+--
 -- Everything happens inside one transaction that is rolled back at the end, so it
 -- leaves no rows behind and the counter goes back to where it was. A failed check
 -- stops the script with an error that says which one. Success ends with one result

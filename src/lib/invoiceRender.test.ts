@@ -30,7 +30,7 @@ describe('renderFromDraft', () => {
     expect(r.invoiceNo).toBe('')
     expect(r.date).toBe('2026-10-25')
     expect(r.business.businessName).toBe(DEMO_INVOICE_SETTINGS.businessName)
-    expect(r.totals.map(t => t.amount)).toEqual([120, 120, 240])
+    expect(r.totals.map(t => t.amount)).toEqual([240, -120, 120, 240])
   })
 
   it('names a deposit from before the app by its old number', () => {

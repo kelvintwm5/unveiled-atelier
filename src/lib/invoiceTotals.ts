@@ -7,7 +7,7 @@
 // 0.1 + 0.2 is 0.30000000000000004 and 50% of 100.01 is 50.005000000000003;
 // whole numbers of cents are exact.
 
-import type { InvoiceKind, InvoiceTemplate, TotalsRow } from '../types'
+import type { InvoiceAdjustment, InvoiceKind, TotalsRow } from '../types'
 
 export interface PricedLine {
   quantity:   number
@@ -33,48 +33,79 @@ export function calcSubtotal(lines: PricedLine[]): number {
 }
 
 /**
- * The totals block printed under the line items.
- *   deposit       : Subtotal, then 50% booking deposit, payable now.
- *   bespoke final : the remaining 50%.
- *   rental final  : the remaining 50% plus a refundable security deposit of the
- *                   same amount, so the amount payable equals the subtotal.
+ * The totals block printed under the line items. There's no fixed deposit rule:
+ * every row is one Esther added, and the amount payable is what they add up to.
+ *   no payment rows : just the amount payable, which is the subtotal
+ *   payment rows    : Subtotal, each row (a deduction is a negative amount), then
+ *                     the amount payable
  *
- * The booking deposit is 50% rounded to the nearest cent (half a cent rounds up),
- * and the remaining balance is the subtotal minus that deposit. So for an odd
- * number of cents the deposit is a cent more than the balance, and the two
- * invoices always add up to exactly the subtotal.
+ * issue_invoice() works the amount payable out again from the stored rows and
+ * refuses to issue if it disagrees with the last row here.
  *
  * The last row is always the amount payable now.
  */
-export function buildTotalsRows(
-  template: InvoiceTemplate,
-  kind: InvoiceKind,
-  subtotal: number,
-): TotalsRow[] {
-  const total     = toCents(subtotal)
-  const deposit   = Math.round(total / 2)
-  const remaining = total - deposit
+export function buildTotalsRows(subtotal: number, adjustments: InvoiceAdjustment[]): TotalsRow[] {
+  const total   = toCents(subtotal)
+  // 0 - x rather than -x: an empty deduction would otherwise be -0, which prints as "-$0.00".
+  const signed  = adjustments.map(a => (a.direction === 'deduct' ? 0 - toCents(a.amount) : toCents(a.amount)))
+  const payable = signed.reduce((sum, cents) => sum + cents, total)
+  const payableRow: TotalsRow = { label: 'Amount Payable Now', amount: fromCents(payable), bold: true }
 
-  if (kind === 'deposit') {
-    return [
-      { label: 'Subtotal',                       amount: fromCents(total),   bold: false },
-      { label: 'Booking Deposit Required (50%)', amount: fromCents(deposit), bold: false },
-      { label: 'Amount Payable Now',             amount: fromCents(deposit), bold: true  },
-    ]
-  }
-  if (template === 'rental') {
-    return [
-      { label: 'Remaining Balance (50%)',       amount: fromCents(remaining),     bold: false },
-      { label: 'Security Deposit (Refundable)', amount: fromCents(remaining),     bold: false },
-      { label: 'Amount Payable Now',            amount: fromCents(remaining * 2), bold: true  },
-    ]
-  }
+  if (adjustments.length === 0) return [payableRow]
   return [
-    { label: 'Remaining Balance (50%)', amount: fromCents(remaining), bold: false },
-    { label: 'Amount Payable Now',      amount: fromCents(remaining), bold: true  },
+    { label: 'Subtotal', amount: fromCents(total), bold: false },
+    ...adjustments.map((a, i) => ({ label: a.label.trim(), amount: fromCents(signed[i]), bold: false })),
+    payableRow,
   ]
 }
 
 export function amountPayable(rows: TotalsRow[]): number {
   return rows[rows.length - 1]?.amount ?? 0
+}
+
+/**
+ * What "Balance due later" starts at when Esther adds it: the part left after a
+ * half deposit rounded up to the cent. Only a starting figure she can overwrite.
+ */
+export function halfBalance(subtotal: number): number {
+  const total = toCents(subtotal)
+  return fromCents(total - Math.round(total / 2))
+}
+
+// The label the old fixed rule printed on a rental final.
+const OLD_SECURITY_LABEL = 'Security Deposit (Refundable)'
+
+/**
+ * The payment rows to start a replacement with. Invoices issued before payment
+ * rows existed have none stored, only their frozen totals, so without this a
+ * "void & reissue" of a 50% deposit would quietly bill the full price.
+ */
+export function adjustmentsForReissue(inv: {
+  kind: InvoiceKind
+  subtotal: number | null
+  amountPayable: number | null
+  totals: TotalsRow[] | null
+  adjustments: InvoiceAdjustment[]
+}): InvoiceAdjustment[] {
+  if (inv.adjustments.length > 0 || inv.subtotal === null || inv.amountPayable === null) {
+    return inv.adjustments.map(a => ({ ...a }))
+  }
+  const security = toCents(inv.totals?.find(r => r.label === OLD_SECURITY_LABEL)?.amount ?? 0)
+  const heldBack = toCents(inv.subtotal) + security - toCents(inv.amountPayable)
+
+  const rows: InvoiceAdjustment[] = []
+  if (heldBack > 0) {
+    rows.push({
+      label: inv.kind === 'final' ? 'Less: deposit paid' : 'Balance due later',
+      direction: 'deduct',
+      amount: fromCents(heldBack),
+    })
+  }
+  if (security > 0) {
+    rows.push({ label: 'Refundable security deposit', direction: 'add', amount: fromCents(security) })
+  }
+  if (heldBack < 0) {
+    rows.push({ label: 'Additional amount', direction: 'add', amount: fromCents(-heldBack) })
+  }
+  return rows
 }

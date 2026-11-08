@@ -50,7 +50,7 @@ export function renderFromDraft(
     invoiceNo: '',
     date:      today,
     business:  businessOf(settings),
-    totals:    buildTotalsRows(draft.template, draft.kind, calcSubtotal(draft.lines)),
+    totals:    buildTotalsRows(calcSubtotal(draft.lines), draft.adjustments),
   }
 }
 
