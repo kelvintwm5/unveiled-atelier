@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import {
-  appendText, linesFromEditor, parseInline, parseText, serializeLines, shortcutFormat, stripStyles,
+  linesFromEditor, parseInline, parseText, serializeLines, shortcutFormat, stripStyles,
   type EditorNode, type InlineSpan,
 } from './invoiceText'
 
@@ -69,21 +69,6 @@ describe('parseText', () => {
   it('is empty for empty text', () => {
     expect(parseText('')).toEqual([])
     expect(parseText('\n  \n')).toEqual([])
-  })
-})
-
-describe('appendText', () => {
-  it('puts the clause on a new line after the existing text', () => {
-    expect(appendText('Design as discussed.', '- Cleaning included')).toBe('Design as discussed.\n- Cleaning included')
-  })
-
-  it('drops trailing blank lines first, so no gap builds up', () => {
-    expect(appendText('One\n\n  ', 'Two')).toBe('One\nTwo')
-  })
-
-  it('is just the clause when the text is empty', () => {
-    expect(appendText('', 'Two')).toBe('Two')
-    expect(appendText('\n', 'Two')).toBe('Two')
   })
 })
 

@@ -45,7 +45,7 @@ function fillEditor(root: HTMLElement, value: string) {
 //
 // React doesn't own the contents. If it re-rendered them on each keystroke the
 // cursor would jump, so the box is only refilled when the value changes from
-// outside, such as "Reset to default" or inserting a clause.
+// outside, such as "Reset to default".
 //
 // document.execCommand is marked deprecated, but it's supported by every browser
 // and the web has no replacement for it yet. It also keeps Cmd+Z working.

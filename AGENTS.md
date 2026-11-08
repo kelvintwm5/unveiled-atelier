@@ -156,9 +156,8 @@ npm test         # Vitest, for the pure domain modules in src/lib
   - An optional client note under the client details.
   - A terms section, printed on its own page. It starts from the default terms for
     that template (rental or bespoke) and can be edited for each invoice.
-  - Owner-editable data in the app, not code: a clause library of reusable snippets,
-    a service library of standard line items, the default terms, and business details
-    (PayNow, bank, address).
+  - Owner-editable data in the app, not code: a service library of standard line
+    items, the default terms, and business details (PayNow, bank, address).
   - Text formatting: plain multi-line text, where lines that start with `- ` become
     bullets and `<b>`, `<i>` and `<u>` style words. It isn't HTML: those are the only
     tags. Everything reads it through `src/lib/invoiceText.ts`, and `TermsEditor`
@@ -230,6 +229,12 @@ Ask before you:
 
 ## Decisions
 
+- **2026-11-08: the clause library is removed from the app.**
+  - Why: Kelvin's call. Reusable wording now lives in the service library and the
+    default terms.
+  - The `invoice_clauses` table from 0006 stays for now, unused, because dropping it
+    is destructive and can't be undone. Text already copied into invoices is unaffected.
+
 - **2026-11-08: invoice totals come from rows Esther adds, not a 50% rule.**
   - Why: she may collect in full upfront or vary the deposit and security deposit.
   - What it costs: row amounts are fixed figures, so one doesn't follow if a service
@@ -260,5 +265,5 @@ Ask before you:
     - The restricted `drive` scope kept the app in Google's OAuth test mode.
     - The Docs API code that inserts text by character position was fragile.
   - What it costs: the owner can't freely restyle the layout. Mitigations are the
-    editable wording slots, the clause library, and settings in the app.
+    editable wording slots, the service library, and settings in the app.
   - Revisit if Esther regularly needs free-form layout on individual invoices.

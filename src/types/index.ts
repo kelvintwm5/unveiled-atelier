@@ -151,16 +151,6 @@ export interface BusinessDetails {
   bankAccountNo: string
 }
 
-// A reusable piece of wording from the clause library. Inserting one copies its
-// body into the invoice, so editing the clause later changes no invoice.
-export interface InvoiceClause {
-  id: string
-  title: string          // what Esther picks it by, e.g. "Cleaning fee"
-  body: string           // plain text; lines starting with "- " print as bullets
-}
-
-export type NewInvoiceClause = Omit<InvoiceClause, 'id'>
-
 // A standard service Esther picks from when adding a line item. Picking copies it
 // into the line, so editing the library never changes an invoice.
 export interface InvoiceService {

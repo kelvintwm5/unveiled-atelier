@@ -11,12 +11,12 @@
 
 import { getSupabase } from './supabase'
 import { adjustmentsForReissue, amountPayable, buildTotalsRows, calcSubtotal } from './invoiceTotals'
-import { DEMO_CLAUSES, DEMO_INVOICES, DEMO_INVOICE_SETTINGS, DEMO_SERVICES } from './demoData'
+import { DEMO_INVOICES, DEMO_INVOICE_SETTINGS, DEMO_SERVICES } from './demoData'
 import { renderFromIssued } from './invoiceRender'
 import { renderInvoicePdf } from './invoicePdf'
 import type {
-  BusinessDetails, Invoice, InvoiceAdjustment, InvoiceClause, InvoiceDraft, InvoiceKind, InvoiceLine,
-  InvoiceService, InvoiceSettings, InvoiceStatus, InvoiceTemplate, NewInvoiceClause, NewInvoiceService,
+  BusinessDetails, Invoice, InvoiceAdjustment, InvoiceDraft, InvoiceKind, InvoiceLine,
+  InvoiceService, InvoiceSettings, InvoiceStatus, InvoiceTemplate, NewInvoiceService,
   TotalsRow,
 } from '../types'
 
@@ -30,7 +30,6 @@ const DEMO_NO_ISSUE = 'The demo can’t issue or void invoices. Sign in to issue
 const demo = {
   invoices: DEMO_INVOICES.map(copyInvoice),
   settings: { ...DEMO_INVOICE_SETTINGS },
-  clauses: DEMO_CLAUSES.map(c => ({ ...c })),
   services: DEMO_SERVICES.map(s => ({ ...s })),
 }
 
@@ -374,66 +373,6 @@ export async function updateInvoiceSettings(mode: Mode, settings: InvoiceSetting
   return toSettings(data[0] as SettingsRow)
 }
 
-// ── Clause library ─────────────────────────────────────────────────────────────
-
-interface ClauseRow {
-  id: string
-  title: string
-  body: string
-}
-
-const CLAUSE_COLUMNS = 'id, title, body'
-
-/** The clause library, in the order the clauses were added. */
-export async function listClauses(mode: Mode): Promise<InvoiceClause[]> {
-  if (mode === 'demo') return demo.clauses.map(c => ({ ...c }))
-  const { data, error } = await getSupabase()
-    .from('invoice_clauses')
-    .select(CLAUSE_COLUMNS)
-    .order('sort_order')
-    .order('created_at')
-  if (error) throw new Error(`Couldn't load the clause library: ${error.message}`)
-  return data as ClauseRow[]
-}
-
-/** Adds a clause (id null) or changes one. Invoices that already use it keep their copy. */
-export async function saveClause(mode: Mode, id: string | null, input: NewInvoiceClause): Promise<InvoiceClause> {
-  const title = input.title.trim()
-  const body = input.body.replace(/\s+$/, '')
-  if (!title) throw new Error('Give the clause a title.')
-  if (!body.trim()) throw new Error('The clause needs some text.')
-
-  if (mode === 'demo') {
-    const clause = { id: id ?? crypto.randomUUID(), title, body }
-    demo.clauses = id ? demo.clauses.map(c => (c.id === id ? clause : c)) : [...demo.clauses, clause]
-    return { ...clause }
-  }
-
-  const query = id
-    ? getSupabase().from('invoice_clauses').update({ title, body }).eq('id', id)
-    : getSupabase().from('invoice_clauses').insert({ title, body })
-  // .select() makes an update report which row it changed, so a clause deleted
-  // on another device fails loudly instead of "saving" nothing.
-  const { data, error } = await query.select(CLAUSE_COLUMNS)
-  if (error) throw new Error(`Couldn't save the clause: ${error.message}`)
-  if (!data?.length) throw new Error("Couldn't save the clause: it no longer exists. Reload the page.")
-  return data[0] as ClauseRow
-}
-
-export async function deleteClause(mode: Mode, id: string): Promise<void> {
-  if (mode === 'demo') {
-    demo.clauses = demo.clauses.filter(c => c.id !== id)
-    return
-  }
-  const { data, error } = await getSupabase()
-    .from('invoice_clauses')
-    .delete()
-    .eq('id', id)
-    .select('id')
-  if (error) throw new Error(`Couldn't delete the clause: ${error.message}`)
-  if (!data?.length) throw new Error("Couldn't delete the clause: it no longer exists. Reload the page.")
-}
-
 // ── Service library ────────────────────────────────────────────────────────────
 
 interface ServiceRow {
@@ -491,7 +430,8 @@ export async function saveService(mode: Mode, id: string | null, input: NewInvoi
   const query = id
     ? getSupabase().from('invoice_services').update(row).eq('id', id)
     : getSupabase().from('invoice_services').insert(row)
-  // As with clauses: .select() makes an update of a deleted row fail loudly.
+  // .select() makes an update report which row it changed, so a service deleted
+  // on another device fails loudly instead of "saving" nothing.
   const { data, error } = await query.select(SERVICE_COLUMNS)
   if (error) throw new Error(`Couldn't save the service: ${error.message}`)
   if (!data?.length) throw new Error("Couldn't save the service: it no longer exists. Reload the page.")
