@@ -10,23 +10,36 @@
 export interface TextBlock {
   bullet: boolean
   text: string
+  gapBefore: boolean     // a blank line came before it, so it starts a new paragraph
 }
 
 // A bullet's dash can sit inside its styling when a whole line is made bold.
 const BULLET_START = /^\s*((?:<[biu]>)*)- /
 
-/** Splits text into lines and bullets. Blank lines and trailing spaces are dropped. */
+/**
+ * Splits text into lines and bullets. A run of blank lines becomes one paragraph
+ * gap, except at the very top where it would only push the text down. Trailing
+ * spaces are dropped.
+ */
 export function parseText(text: string): TextBlock[] {
-  return text
-    .split(/\r?\n/)
-    .map(line => line.trimEnd())
-    .filter(line => stripStyles(line).trim() !== '')
-    .map(line => {
-      const bullet = BULLET_START.exec(line)
-      return bullet
-        ? { bullet: true, text: bullet[1] + line.slice(bullet[0].length) }
-        : { bullet: false, text: line }
+  const blocks: TextBlock[] = []
+  let blankBefore = false
+
+  for (const raw of text.split(/\r?\n/)) {
+    const line = raw.trimEnd()
+    if (stripStyles(line).trim() === '') {
+      blankBefore = true
+      continue
+    }
+    const bullet = BULLET_START.exec(line)
+    blocks.push({
+      bullet: bullet !== null,
+      text: bullet ? bullet[1] + line.slice(bullet[0].length) : line,
+      gapBefore: blankBefore && blocks.length > 0,
     })
+    blankBefore = false
+  }
+  return blocks
 }
 
 /**

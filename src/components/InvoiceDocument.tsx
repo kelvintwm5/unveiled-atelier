@@ -65,6 +65,7 @@ const s = StyleSheet.create({
   payable:    { flexDirection: 'row', justifyContent: 'flex-end', paddingVertical: 6, paddingRight: 4, marginTop: 4, borderTopWidth: 1, borderTopColor: STONE_800, backgroundColor: STONE_100 },
   bulletRow:  { flexDirection: 'row' },
   bulletDot:  { width: 10 },
+  paragraphGap: { marginTop: 9 },
   section:    { marginTop: 22 },
   termsHead:  { fontSize: 10, fontWeight: 600, letterSpacing: 1.2, marginBottom: 10 },
   watermark:  { position: 'absolute', top: 330, left: 60, fontSize: 120, fontWeight: 600, color: ROSE, opacity: 0.08, transform: 'rotate(-35deg)', letterSpacing: 10 },
@@ -87,18 +88,22 @@ function inlineSpans(text: string) {
   return parseInline(text).map((span, i) => <Text key={i} style={spanStyle(span)}>{span.text}</Text>)
 }
 
-// Plain text where "- " lines are bullets and markers style words (see invoiceText.ts).
+// Plain text where "- " lines are bullets, tags style words and a blank line starts
+// a new paragraph (see invoiceText.ts).
 function RichText({ text, style }: { text: string; style?: TextStyle }) {
   return (
     <View>
-      {parseText(text).map((block, i) => block.bullet ? (
-        <View key={i} style={s.bulletRow}>
-          <Text style={style ? [s.bulletDot, style] : s.bulletDot}>•</Text>
-          <Text style={style ? [{ flex: 1 }, style] : { flex: 1 }}>{inlineSpans(block.text)}</Text>
-        </View>
-      ) : (
-        <Text key={i} style={style}>{inlineSpans(block.text)}</Text>
-      ))}
+      {parseText(text).map((block, i) => {
+        const gap = block.gapBefore ? s.paragraphGap : {}
+        return block.bullet ? (
+          <View key={i} style={{ ...s.bulletRow, ...gap }}>
+            <Text style={style ? [s.bulletDot, style] : s.bulletDot}>•</Text>
+            <Text style={style ? [{ flex: 1 }, style] : { flex: 1 }}>{inlineSpans(block.text)}</Text>
+          </View>
+        ) : (
+          <Text key={i} style={{ ...style, ...gap }}>{inlineSpans(block.text)}</Text>
+        )
+      })}
     </View>
   )
 }

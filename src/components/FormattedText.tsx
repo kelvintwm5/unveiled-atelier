@@ -6,7 +6,7 @@ export default function FormattedText({ text, className = '' }: { text: string; 
   return (
     <div className={className}>
       {parseText(text).map((block, i) => (
-        <p key={i} className={block.bullet ? 'flex gap-1.5' : undefined}>
+        <p key={i} className={`${block.bullet ? 'flex gap-1.5' : ''} ${block.gapBefore ? 'mt-3' : ''}`}>
           {block.bullet && <span aria-hidden>•</span>}
           <span>
             {parseInline(block.text).map((span, j) => (
