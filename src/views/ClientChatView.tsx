@@ -1,8 +1,8 @@
 import { useEffect, useRef, useState } from 'react'
 import ReactMarkdown from 'react-markdown'
-import { listClients, listActivities, listReminders } from '../lib/clientData'
+import { listClients, listActivities } from '../lib/clientData'
 import { sendChatMessage } from '../lib/chat'
-import type { Client, ClientActivity, ClientReminder } from '../types'
+import type { Client, ClientActivity } from '../types'
 
 interface Message {
   role: 'user' | 'assistant'
@@ -21,14 +21,13 @@ export default function ClientChatView({ mode }: Props) {
   const [loadError, setLoadError]     = useState('')
   const [clients, setClients]         = useState<Client[]>([])
   const [activities, setActivities]   = useState<ClientActivity[]>([])
-  const [reminders, setReminders]     = useState<ClientReminder[]>([])
   const bottomRef = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
     setLoadingData(true)
     setLoadError('')
-    Promise.all([listClients(mode), listActivities(mode), listReminders(mode)])
-      .then(([c, a, r]) => { setClients(c); setActivities(a); setReminders(r) })
+    Promise.all([listClients(mode), listActivities(mode)])
+      .then(([c, a]) => { setClients(c); setActivities(a) })
       .catch((e: unknown) => setLoadError(e instanceof Error ? e.message : String(e)))
       .finally(() => setLoadingData(false))
   }, [mode])
@@ -48,7 +47,7 @@ export default function ClientChatView({ mode }: Props) {
 
     try {
       const reply = await sendChatMessage(mode, text, messages, {
-        chatMode: 'clients', clients, activities, reminders,
+        chatMode: 'clients', clients, activities,
       })
       setMessages(prev => [...prev, { role: 'assistant', content: reply }])
     } catch (err) {

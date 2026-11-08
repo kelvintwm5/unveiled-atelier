@@ -1,15 +1,11 @@
 // All client-tracker data access lives here. Views call these functions and never
 // see the Supabase client or the database's snake_case column names.
 //   demo → an in-memory copy of the fixtures; no network
-//   app  → the clients, activities and client_reminders tables, guarded by RLS
-//          (is_app_owner())
+//   app  → the clients and activities tables, guarded by RLS (is_app_owner())
 
 import { getSupabase } from './supabase'
-import { todaySgt } from './dates'
-import { DEMO_CLIENTS, DEMO_ACTIVITIES, demoReminders } from './demoData'
-import type {
-  Client, ClientActivity, ClientReminder, ClientStage, NewActivity, NewClient, NewReminder,
-} from '../types'
+import { DEMO_CLIENTS, DEMO_ACTIVITIES } from './demoData'
+import type { Client, ClientActivity, ClientStage, NewActivity, NewClient } from '../types'
 
 type Mode = 'demo' | 'app'
 
@@ -21,7 +17,6 @@ const demo = {
   clients: DEMO_CLIENTS.map(c => ({ ...c })),
   archived: [] as Client[],
   activities: DEMO_ACTIVITIES.map(a => ({ ...a })),
-  reminders: demoReminders(todaySgt()),
 }
 
 function isDemoArchived(clientId: string): boolean {
@@ -55,16 +50,8 @@ interface ActivityRow {
   next_follow_up: string | null
 }
 
-interface ReminderRow {
-  id: string
-  client_id: string
-  remind_on: string
-  note: string
-}
-
 const CLIENT_COLUMNS = 'id, name, email, phone, wedding_date, veil_type, budget, stage, notes, activity_notes'
 const ACTIVITY_COLUMNS = 'id, client_id, activity_date, type, notes, next_follow_up'
-const REMINDER_COLUMNS = 'id, client_id, remind_on, note'
 
 // "Deleted" clients keep their rows, so anything joined to a client has to skip
 // the hidden ones itself. The inner join is what makes the filter drop the row
@@ -119,10 +106,6 @@ function fromNewActivity(a: NewActivity) {
     notes:          a.notes.trim() || null,
     next_follow_up: a.nextFollowUp || null,
   }
-}
-
-function toReminder(r: ReminderRow): ClientReminder {
-  return { id: r.id, clientId: r.client_id, remindOn: r.remind_on, note: r.note }
 }
 
 /**
@@ -182,24 +165,6 @@ export async function listActivities(mode: Mode): Promise<ClientActivity[]> {
     .order('created_at', { ascending: false })
   if (error) throw new Error(`Couldn't load the activity log: ${error.message}`)
   return (data as unknown as ActivityRow[]).map(toActivity)
-}
-
-/** Open reminders, soonest first. Skips deleted clients. */
-export async function listReminders(mode: Mode): Promise<ClientReminder[]> {
-  if (mode === 'demo') {
-    return demo.reminders
-      .filter(r => !isDemoArchived(r.clientId))
-      .map(r => ({ ...r }))
-      .sort((a, b) => a.remindOn.localeCompare(b.remindOn))
-  }
-  const { data, error } = await getSupabase()
-    .from('client_reminders')
-    .select(`${REMINDER_COLUMNS}, ${ACTIVE_CLIENT_JOIN}`)
-    .is('done_at', null)
-    .is('clients.archived_at', null)
-    .order('remind_on')
-  if (error) throw new Error(`Couldn't load reminders: ${error.message}`)
-  return (data as unknown as ReminderRow[]).map(toReminder)
 }
 
 /** Saves a new client and returns it with the id the database assigned. */
@@ -285,39 +250,6 @@ export async function createActivity(mode: Mode, input: NewActivity): Promise<Cl
     .single()
   if (error) throw new Error(`Couldn't save the activity: ${error.message}`)
   return toActivity(data as ActivityRow)
-}
-
-/** Saves a new reminder and returns it with the id the database assigned. */
-export async function createReminder(mode: Mode, input: NewReminder): Promise<ClientReminder> {
-  if (!input.remindOn) throw new Error('Pick a date for the reminder.')
-  if (!input.note.trim()) throw new Error('Say what the reminder is for.')
-  if (mode === 'demo') {
-    const reminder = { ...input, note: input.note.trim(), id: crypto.randomUUID() }
-    demo.reminders.push(reminder)
-    return { ...reminder }
-  }
-  const { data, error } = await getSupabase()
-    .from('client_reminders')
-    .insert({ client_id: input.clientId, remind_on: input.remindOn, note: input.note.trim() })
-    .select(REMINDER_COLUMNS)
-    .single()
-  if (error) throw new Error(`Couldn't save the reminder: ${error.message}`)
-  return toReminder(data as ReminderRow)
-}
-
-/** Marks a reminder done, which stops it appearing in the app and the morning message. */
-export async function completeReminder(mode: Mode, reminderId: string): Promise<void> {
-  if (mode === 'demo') {
-    demo.reminders = demo.reminders.filter(r => r.id !== reminderId)
-    return
-  }
-  const { data, error } = await getSupabase()
-    .from('client_reminders')
-    .update({ done_at: new Date().toISOString() })
-    .eq('id', reminderId)
-    .select('id')
-  if (error) throw new Error(`Couldn't update the reminder: ${error.message}`)
-  if (!data?.length) throw new Error("Couldn't update the reminder: it no longer exists. Reload the page.")
 }
 
 // ── Display ────────────────────────────────────────────────────────────────────

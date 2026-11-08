@@ -1,12 +1,9 @@
 // Sample data used in demo mode — no API call, no auth required.
 // Fictional, so portfolio visitors can explore the full UI without signing in.
 
-// The .js extension is required: api/ imports this file, and it runs as a Node ES
-// module, which doesn't guess extensions.
-import { addDays } from './dates.js'
 import type {
-  Transaction, IrasSummary, MonthlySummary, PnlTotals, Client, ClientActivity, ClientReminder, Invoice,
-  InvoiceClause, InvoiceSettings,
+  Transaction, IrasSummary, MonthlySummary, PnlTotals, Client, ClientActivity, Invoice, InvoiceClause,
+  InvoiceSettings,
 } from '../types'
 
 // Fixed ids, so React keys stay stable. Demo data never reaches the database.
@@ -148,31 +145,6 @@ export const DEMO_CLIENTS: Client[] = [
     activityNotes: '',
   },
 ]
-
-// A function of today, so a demo opened on any date has something due. The other
-// demo dates are fixed, but a reminder only makes sense relative to now.
-export function demoReminders(today: string): ClientReminder[] {
-  return [
-    {
-      id: '00000000-0000-4000-a000-000000000001',
-      clientId: DEMO_CLIENT_IDS['Rachel Tan'],
-      remindOn: addDays(today, -2),
-      note: 'Confirm the lace trim adjustment is finished',
-    },
-    {
-      id: '00000000-0000-4000-a000-000000000002',
-      clientId: DEMO_CLIENT_IDS['Priya Nair'],
-      remindOn: today,
-      note: 'Send the pearl edge rental photos',
-    },
-    {
-      id: '00000000-0000-4000-a000-000000000003',
-      clientId: DEMO_CLIENT_IDS['Mei Ling Chen'],
-      remindOn: addDays(today, 5),
-      note: 'Share pricing for the custom rental',
-    },
-  ]
-}
 
 export const DEMO_ACTIVITIES: ClientActivity[] = [
   {

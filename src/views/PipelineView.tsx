@@ -1,11 +1,7 @@
 import { useEffect, useState } from 'react'
-import {
-  clientLabels, listArchivedClients, listClients, listReminders, restoreClient, updateClientStage,
-} from '../lib/clientData'
-import { formatDate, todaySgt } from '../lib/dates'
-import { dueReminders } from '../lib/reminderDigest'
+import { listArchivedClients, listClients, restoreClient, updateClientStage } from '../lib/clientData'
 import ClientProfileModal, { STAGES } from '../components/ClientProfileModal'
-import type { Client, ClientReminder, ClientStage, VeilType } from '../types'
+import type { Client, ClientStage, VeilType } from '../types'
 
 const ALL_FILTER = 'All' as const
 const DELETED_FILTER = 'Deleted' as const
@@ -27,10 +23,6 @@ const VEIL_COLORS: Record<VeilType, string> = {
   'TBD':            'bg-stone-50 text-stone-400',
 }
 
-function byDate(a: ClientReminder, b: ClientReminder): number {
-  return a.remindOn.localeCompare(b.remindOn)
-}
-
 interface Props {
   mode: 'demo' | 'app'
 }
@@ -38,7 +30,6 @@ interface Props {
 export default function PipelineView({ mode }: Props) {
   const [clients, setClients]       = useState<Client[]>([])
   const [archived, setArchived]     = useState<Client[]>([])
-  const [reminders, setReminders]   = useState<ClientReminder[]>([])
   const [loading, setLoading]       = useState(true)
   const [error, setError]           = useState('')
   const [filter, setFilter]         = useState<Filter>(ALL_FILTER)
@@ -49,15 +40,12 @@ export default function PipelineView({ mode }: Props) {
   useEffect(() => {
     setLoading(true)
     setError('')
-    Promise.all([listClients(mode), listArchivedClients(mode), listReminders(mode)])
-      .then(([c, a, r]) => { setClients(c); setArchived(a); setReminders(r) })
+    Promise.all([listClients(mode), listArchivedClients(mode)])
+      .then(([c, a]) => { setClients(c); setArchived(a) })
       .catch((e: unknown) => setError(e instanceof Error ? e.message : String(e)))
       .finally(() => setLoading(false))
   }, [mode])
 
-  const today = todaySgt()
-  const labels = clientLabels(clients)
-  const due = dueReminders(reminders, today)
   const showingDeleted = filter === DELETED_FILTER
   const filtered = filter === ALL_FILTER ? clients : clients.filter(c => c.stage === filter)
 
@@ -83,7 +71,6 @@ export default function PipelineView({ mode }: Props) {
   function handleDeleted(client: Client) {
     setClients(prev => prev.filter(c => c.id !== client.id))
     setArchived(prev => [client, ...prev])
-    setReminders(prev => prev.filter(r => r.clientId !== client.id))
     setProfile(null)
   }
 
@@ -93,16 +80,9 @@ export default function PipelineView({ mode }: Props) {
       await restoreClient(mode, client.id)
       setArchived(prev => prev.filter(c => c.id !== client.id))
       setClients(prev => [...prev, client])
-      // A restored client's reminders were left out of the last load.
-      setReminders(await listReminders(mode))
     } catch (e: unknown) {
       setActionError(e instanceof Error ? e.message : 'Failed to restore the client.')
     }
-  }
-
-  function openClient(clientId: string) {
-    const client = clients.find(c => c.id === clientId)
-    if (client) setProfile({ client })
   }
 
   return (
@@ -154,31 +134,6 @@ export default function PipelineView({ mode }: Props) {
         {error && <p className="text-rose-600 text-sm">{error}</p>}
         {actionError && <p className="text-rose-600 text-sm mb-4">{actionError}</p>}
 
-        {/* Reminders due */}
-        {!loading && !error && !showingDeleted && due.length > 0 && (
-          <section className="bg-rose-50 border border-rose-100 rounded-xl p-4 mb-6">
-            <h2 className="text-xs font-semibold text-rose-800 uppercase tracking-wider mb-2">
-              Reminders due ({due.length})
-            </h2>
-            <ul>
-              {due.map(r => (
-                <li key={r.id}>
-                  <button
-                    onClick={() => openClient(r.clientId)}
-                    className="w-full text-left py-1.5 text-sm text-stone-700 hover:text-rose-800 transition-colors"
-                  >
-                    <span className="font-medium">{labels.get(r.clientId) ?? 'Unknown client'}</span>
-                    <span className="break-words">: {r.note}</span>
-                    {r.remindOn < today && (
-                      <span className="text-xs text-rose-700"> (overdue, {formatDate(r.remindOn)})</span>
-                    )}
-                  </button>
-                </li>
-              ))}
-            </ul>
-          </section>
-        )}
-
         {/* Client cards */}
         {!loading && !error && showingDeleted && (
           archived.length === 0 ? (
@@ -215,8 +170,6 @@ export default function PipelineView({ mode }: Props) {
                 <ClientCard
                   key={client.id}
                   client={client}
-                  nextReminder={reminders.filter(r => r.clientId === client.id).sort(byDate)[0]}
-                  today={today}
                   onStageChange={(newStage) => handleStageChange(client.id, client.stage, newStage)}
                   onOpen={() => setProfile({ client })}
                 />
@@ -233,22 +186,17 @@ export default function PipelineView({ mode }: Props) {
           key={profile.client?.id ?? 'new'}
           mode={mode}
           client={profile.client}
-          reminders={reminders.filter(r => r.clientId === profile.client?.id).sort(byDate)}
           onClose={() => setProfile(null)}
           onSaved={handleSaved}
           onDeleted={handleDeleted}
-          onReminderAdded={r => setReminders(prev => [...prev, r])}
-          onReminderDone={id => setReminders(prev => prev.filter(r => r.id !== id))}
         />
       )}
     </div>
   )
 }
 
-function ClientCard({ client, nextReminder, today, onStageChange, onOpen }: {
+function ClientCard({ client, onStageChange, onOpen }: {
   client: Client
-  nextReminder: ClientReminder | undefined
-  today: string
   onStageChange: (stage: ClientStage) => void
   onOpen: () => void
 }) {
@@ -279,13 +227,6 @@ function ClientCard({ client, nextReminder, today, onStageChange, onOpen }: {
         {client.budget > 0 && (
           <span className="text-xs px-2 py-0.5 rounded-full bg-stone-50 text-stone-500 font-mono">
             S${client.budget.toLocaleString()}
-          </span>
-        )}
-        {nextReminder && (
-          <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${
-            nextReminder.remindOn <= today ? 'bg-rose-100 text-rose-800' : 'bg-stone-100 text-stone-500'
-          }`}>
-            Reminder: {formatDate(nextReminder.remindOn)}
           </span>
         )}
       </div>

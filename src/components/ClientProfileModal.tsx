@@ -1,9 +1,6 @@
 import { useState } from 'react'
-import {
-  archiveClient, completeReminder, createClient, createReminder, updateClient,
-} from '../lib/clientData'
-import { formatDate, todaySgt } from '../lib/dates'
-import type { Client, ClientReminder, ClientStage, NewClient, VeilType } from '../types'
+import { archiveClient, createClient, updateClient } from '../lib/clientData'
+import type { Client, ClientStage, NewClient, VeilType } from '../types'
 
 export const STAGES: ClientStage[] = ['Inquiry', 'Consultation', 'Fitting', 'Confirmed', 'Completed', 'Lost']
 const VEIL_TYPES: VeilType[] = ['Rental', 'Bespoke Veil', 'Bespoke Rental', 'TBD']
@@ -36,30 +33,18 @@ function rowsFor(text: string, min: number): number {
 
 interface Props {
   mode: 'demo' | 'app'
-  client: Client | null                  // null adds a new client
-  reminders: ClientReminder[]            // this client's open reminders, soonest first
+  client: Client | null    // null adds a new client
   onClose: () => void
   onSaved: (client: Client) => void
   onDeleted: (client: Client) => void
-  onReminderAdded: (reminder: ClientReminder) => void
-  onReminderDone: (reminderId: string) => void
 }
 
-export default function ClientProfileModal({
-  mode, client, reminders, onClose, onSaved, onDeleted, onReminderAdded, onReminderDone,
-}: Props) {
-  const [form, setForm]                 = useState(() => formFor(client))
-  const [saving, setSaving]             = useState(false)
-  const [error, setError]               = useState('')
+export default function ClientProfileModal({ mode, client, onClose, onSaved, onDeleted }: Props) {
+  const [form, setForm]                   = useState(() => formFor(client))
+  const [saving, setSaving]               = useState(false)
+  const [error, setError]                 = useState('')
   const [confirmDelete, setConfirmDelete] = useState(false)
-  const [deleting, setDeleting]         = useState(false)
-  const [reminderDate, setReminderDate] = useState('')
-  const [reminderNote, setReminderNote] = useState('')
-  const [reminderBusy, setReminderBusy] = useState(false)
-  const [reminderError, setReminderError] = useState('')
-
-  const today = todaySgt()
-  const reminderDraftStarted = reminderDate !== '' || reminderNote.trim() !== ''
+  const [deleting, setDeleting]           = useState(false)
 
   function set<K extends keyof ClientForm>(key: K, value: ClientForm[K]) {
     setForm(f => ({ ...f, [key]: value }))
@@ -67,11 +52,6 @@ export default function ClientProfileModal({
 
   async function handleSave() {
     if (!form.name.trim()) { setError('Name is required.'); return }
-    // "Save changes" doesn't save a reminder, so a half-typed one would vanish.
-    if (reminderDraftStarted) {
-      setError('Add the reminder you started, or clear it, before saving.')
-      return
-    }
     setSaving(true)
     setError('')
     const input: NewClient = { ...form, budget: parseFloat(form.budget) || 0 }
@@ -93,38 +73,6 @@ export default function ClientProfileModal({
     } catch (e: unknown) {
       setError(e instanceof Error ? e.message : 'Failed to delete.')
       setDeleting(false)
-    }
-  }
-
-  async function handleAddReminder() {
-    if (!client) return
-    if (!reminderDate) { setReminderError('Pick a date for the reminder.'); return }
-    if (!reminderNote.trim()) { setReminderError('Say what the reminder is for.'); return }
-    setReminderBusy(true)
-    setReminderError('')
-    try {
-      onReminderAdded(await createReminder(mode, {
-        clientId: client.id, remindOn: reminderDate, note: reminderNote,
-      }))
-      setReminderDate('')
-      setReminderNote('')
-    } catch (e: unknown) {
-      setReminderError(e instanceof Error ? e.message : 'Failed to save the reminder.')
-    } finally {
-      setReminderBusy(false)
-    }
-  }
-
-  async function handleReminderDone(reminderId: string) {
-    setReminderBusy(true)
-    setReminderError('')
-    try {
-      await completeReminder(mode, reminderId)
-      onReminderDone(reminderId)
-    } catch (e: unknown) {
-      setReminderError(e instanceof Error ? e.message : 'Failed to update the reminder.')
-    } finally {
-      setReminderBusy(false)
     }
   }
 
@@ -191,60 +139,6 @@ export default function ClientProfileModal({
           </Field>
           {error && <p className="text-rose-600 text-sm">{error}</p>}
         </div>
-
-        {client && (
-          <div className="px-6 py-5 border-t border-stone-100 space-y-3">
-            <div>
-              <h3 className="text-sm font-medium text-stone-800">Reminders</h3>
-              <p className="text-xs text-stone-400 mt-0.5">Saved straight away. Repeats each morning until marked Done.</p>
-            </div>
-
-            {reminders.length > 0 && (
-              <ul className="space-y-2">
-                {reminders.map(r => {
-                  const due = r.remindOn <= today
-                  return (
-                    <li key={r.id} className="flex items-start gap-3 bg-stone-50 rounded-lg px-3 py-2">
-                      <div className="flex-1 min-w-0">
-                        <p className="text-sm text-stone-700 break-words">{r.note}</p>
-                        <p className={`text-xs mt-0.5 ${due ? 'text-rose-700 font-medium' : 'text-stone-400'}`}>
-                          {formatDate(r.remindOn)}
-                          {r.remindOn < today && ' (overdue)'}
-                          {r.remindOn === today && ' (today)'}
-                        </p>
-                      </div>
-                      <button
-                        onClick={() => handleReminderDone(r.id)}
-                        disabled={reminderBusy}
-                        className="shrink-0 px-3 py-1.5 text-xs font-medium text-stone-600 bg-white border border-stone-200
-                                   rounded-lg hover:bg-stone-100 transition-colors disabled:opacity-40"
-                      >
-                        Done
-                      </button>
-                    </li>
-                  )
-                })}
-              </ul>
-            )}
-
-            <div className="grid grid-cols-1 sm:grid-cols-[10rem_1fr_auto] gap-2">
-              <input className={inputCls} type="date" value={reminderDate} aria-label="Reminder date"
-                onChange={e => setReminderDate(e.target.value)} />
-              <input className={inputCls} value={reminderNote} aria-label="What the reminder is for"
-                onChange={e => setReminderNote(e.target.value)}
-                placeholder="What to follow up on" />
-              <button
-                onClick={handleAddReminder}
-                disabled={reminderBusy}
-                className="px-4 py-2 text-sm text-rose-800 border border-rose-200 rounded-lg
-                           hover:bg-rose-50 transition-colors disabled:opacity-40"
-              >
-                Add
-              </button>
-            </div>
-            {reminderError && <p className="text-rose-600 text-sm">{reminderError}</p>}
-          </div>
-        )}
 
         {client && (
           <div className="px-6 py-4 border-t border-stone-100">

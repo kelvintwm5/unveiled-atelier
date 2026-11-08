@@ -5,7 +5,7 @@
 import { getAccessToken } from './supabase'
 import { clientChatContext } from './clientChatContext'
 import { financeChatContext } from './financeChatContext'
-import type { Client, ClientActivity, ClientReminder, MonthlyPnl, Transaction } from '../types'
+import type { Client, ClientActivity, MonthlyPnl, Transaction } from '../types'
 
 export interface ChatTurn {
   role: 'user' | 'assistant'
@@ -14,7 +14,7 @@ export interface ChatTurn {
 
 export type ChatContext =
   | { chatMode: 'finance'; transactions: Transaction[]; years: MonthlyPnl[] }
-  | { chatMode: 'clients'; clients: Client[]; activities: ClientActivity[]; reminders: ClientReminder[] }
+  | { chatMode: 'clients'; clients: Client[]; activities: ClientActivity[] }
 
 /** Sends one message and returns Claude's reply. Throws an Error a user can read. */
 export async function sendChatMessage(
@@ -31,7 +31,7 @@ export async function sendChatMessage(
     if (!token) throw new Error('Your session has expired. Sign out and sign in again.')
     headers.Authorization = `Bearer ${token}`
     body = context.chatMode === 'clients'
-      ? { ...body, ...clientChatContext(context.clients, context.activities, context.reminders) }
+      ? { ...body, ...clientChatContext(context.clients, context.activities) }
       : { ...body, ...financeChatContext(context.transactions, context.years) }
   }
 

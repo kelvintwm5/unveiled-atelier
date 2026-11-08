@@ -1,8 +1,7 @@
 import { useEffect, useState } from 'react'
-import { listClients, listActivities, listReminders, clientLabels } from '../lib/clientData'
-import { addDays, formatDate, todaySgt } from '../lib/dates'
-import { dueReminders } from '../lib/reminderDigest'
-import type { Client, ClientActivity, ClientReminder, ClientStage } from '../types'
+import { listClients, listActivities, clientLabels } from '../lib/clientData'
+import { addDays, todaySgt } from '../lib/dates'
+import type { Client, ClientActivity, ClientStage } from '../types'
 
 const STAGE_ORDER: ClientStage[] = ['Inquiry', 'Consultation', 'Fitting', 'Confirmed', 'Completed', 'Lost']
 
@@ -30,15 +29,14 @@ interface Props {
 export default function ClientDashboardView({ mode }: Props) {
   const [clients, setClients]     = useState<Client[]>([])
   const [activities, setActivities] = useState<ClientActivity[]>([])
-  const [reminders, setReminders] = useState<ClientReminder[]>([])
   const [loading, setLoading]     = useState(true)
   const [error, setError]         = useState('')
 
   useEffect(() => {
     setLoading(true)
     setError('')
-    Promise.all([listClients(mode), listActivities(mode), listReminders(mode)])
-      .then(([c, a, r]) => { setClients(c); setActivities(a); setReminders(r) })
+    Promise.all([listClients(mode), listActivities(mode)])
+      .then(([c, a]) => { setClients(c); setActivities(a) })
       .catch((e: unknown) => setError(e instanceof Error ? e.message : String(e)))
       .finally(() => setLoading(false))
   }, [mode])
@@ -64,9 +62,8 @@ export default function ClientDashboardView({ mode }: Props) {
   const today = todaySgt()
   const in30  = addDays(today, 30)
   const labels = clientLabels(clients)
-  const due = dueReminders(reminders, today)
 
-  const active  = clients.filter(c => c.stage !== 'Completed' && c.stage !== 'Lost')
+  const active   = clients.filter(c => c.stage !== 'Completed' && c.stage !== 'Lost')
   const upcoming = clients.filter(c => c.weddingDate >= today && c.weddingDate <= in30)
 
   const needsFollowUp = active.filter(c => {
@@ -130,28 +127,6 @@ export default function ClientDashboardView({ mode }: Props) {
               </div>
             ))}
           </div>
-        </div>
-
-        {/* Reminders due */}
-        <div className="bg-white border border-stone-200 rounded-xl p-6">
-          <h2 className="text-xs font-semibold text-stone-500 uppercase tracking-wider mb-5">Reminders Due</h2>
-          {due.length === 0 ? (
-            <p className="text-stone-400 text-sm">Nothing due today.</p>
-          ) : (
-            <div className="space-y-4">
-              {due.map(r => (
-                <div key={r.id} className="flex gap-3 sm:gap-4 items-start">
-                  <p className={`text-xs w-[4.5rem] sm:w-20 shrink-0 pt-0.5 ${r.remindOn < today ? 'text-rose-600 font-medium' : 'text-stone-400'}`}>
-                    {formatDate(r.remindOn)}
-                  </p>
-                  <div className="flex-1 min-w-0">
-                    <p className="text-sm font-medium text-stone-800">{labels.get(r.clientId) ?? 'Unknown client'}</p>
-                    <p className="text-sm text-stone-500 break-words">{r.note}</p>
-                  </div>
-                </div>
-              ))}
-            </div>
-          )}
         </div>
 
         {/* Recent activity */}
