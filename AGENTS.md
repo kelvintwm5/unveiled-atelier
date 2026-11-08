@@ -50,6 +50,7 @@ abstractions (orgs, workspaces, per-user sheets).
 ```
 api/                    Vercel serverless functions (server-side; secrets live here)
   chat.ts               Anthropic chat endpoint
+  send-reminders.ts     Daily cron: Telegram message of due client reminders
 src/
   App.tsx               Auth state machine: landing | demo | app
   pages/                LandingPage, AppShell (layout + view switching)
@@ -221,6 +222,24 @@ Ask before you:
 - Disable RLS or add a permissive `using (true)` policy to make something work.
 
 ## Decisions
+
+- **2026-11-08: client reminders reach Esther as a daily Telegram message.**
+  - How: Vercel Cron calls `api/send-reminders.ts` at 09:00 SGT. It lists open
+    reminders dated today or earlier, using a plain query with no AI. Overdue ones
+    repeat each morning until marked Done.
+  - Why: consumer agents (Muse, Instinct, Grok) can't read this app's data, and the
+    in-app chat can't start a conversation. Telegram gives a real phone notification
+    for free with no new dependency.
+  - What it costs: reminders are by date, not time, because Vercel's Hobby plan runs
+    crons once a day. The endpoint needs the `service_role` key, its only use in the
+    app, because no one is signed in when it runs. Client names and reminder text pass
+    through Telegram, so email and phone are left out.
+  - Revisit if Esther wants WhatsApp, timed reminders, or Done buttons in the message.
+
+- **2026-11-08: deleting a client hides it (`archived_at`) and can be restored.**
+  - Why: invoices and transactions reference clients and must be kept.
+  - Every query that returns clients, or rows joined to a client, must skip archived
+    clients.
 
 - **2026-10-10: invoices are generated as PDFs, not Google Docs.**
   - Why:
