@@ -7,6 +7,7 @@ import type { Client, ClientActivity } from '../types'
 
 export interface ChatClient {
   name: string; weddingDate: string; veilType: string; budget: number; stage: string; notes: string
+  activityNotes: string
 }
 
 export interface ChatActivity {
@@ -23,8 +24,8 @@ export function clientChatContext(
 ): { clients: ChatClient[]; activities: ChatActivity[] } {
   const nameById = new Map(clients.map(c => [c.id, c.name]))
   return {
-    clients: clients.map(({ name, weddingDate, veilType, budget, stage, notes }) =>
-      ({ name, weddingDate, veilType, budget, stage, notes })),
+    clients: clients.map(({ name, weddingDate, veilType, budget, stage, notes, activityNotes }) =>
+      ({ name, weddingDate, veilType, budget, stage, notes, activityNotes })),
     activities: activities.map(({ date, clientId, type, notes, nextFollowUp }) =>
       ({ date, clientName: nameById.get(clientId) ?? 'Unknown client', type, notes, nextFollowUp })),
   }

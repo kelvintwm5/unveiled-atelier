@@ -82,6 +82,7 @@ export const DEMO_CLIENTS: Client[] = [
     budget: 450,
     stage: 'Fitting',
     notes: 'Cathedral length, French lace trim. 2nd fitting done, minor adjustments pending.',
+    activityNotes: 'Prefers WhatsApp in the evenings. Mother joins the final fitting.',
   },
   {
     id: DEMO_CLIENT_IDS['Priya Nair'],
@@ -93,6 +94,7 @@ export const DEMO_CLIENTS: Client[] = [
     budget: 180,
     stage: 'Consultation',
     notes: 'Traditional Indian-Chinese wedding. Likes the pearl edge rental.',
+    activityNotes: '',
   },
   {
     id: DEMO_CLIENT_IDS['Amanda Goh'],
@@ -104,6 +106,7 @@ export const DEMO_CLIENTS: Client[] = [
     budget: 600,
     stage: 'Confirmed',
     notes: 'Elbow length, silk organza. Deposit paid. Pickup 8 March.',
+    activityNotes: 'Sister will collect the veil on her behalf.',
   },
   {
     id: DEMO_CLIENT_IDS['Jessica Lim'],
@@ -115,6 +118,7 @@ export const DEMO_CLIENTS: Client[] = [
     budget: 150,
     stage: 'Inquiry',
     notes: 'Contacted via Instagram. Interested in floor-length options.',
+    activityNotes: '',
   },
   {
     id: DEMO_CLIENT_IDS['Sarah Wong'],
@@ -126,6 +130,7 @@ export const DEMO_CLIENTS: Client[] = [
     budget: 520,
     stage: 'Completed',
     notes: 'Fingertip length, applique flowers. Delivered and very happy.',
+    activityNotes: '',
   },
   {
     id: DEMO_CLIENT_IDS['Mei Ling Chen'],
@@ -137,6 +142,7 @@ export const DEMO_CLIENTS: Client[] = [
     budget: 300,
     stage: 'Inquiry',
     notes: 'Enquired about custom-made rental concept. Pricing TBD.',
+    activityNotes: '',
   },
 ]
 

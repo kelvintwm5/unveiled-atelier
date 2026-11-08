@@ -245,6 +245,11 @@ Ask before you:
     directly below.
   - Revisit if the markers confuse her in real use.
 
+- **2026-11-08: deleting a client hides it (`archived_at`) and can be restored.**
+  - Why: invoices and transactions reference clients and must be kept.
+  - Every query that returns clients, or rows joined to a client, must skip archived
+    clients.
+
 - **2026-10-10: invoices are generated as PDFs, not Google Docs.**
   - Why:
     - Editing the Docs by hand let the document drift away from the recorded data.
