@@ -15,11 +15,39 @@
 import { getSupabase } from './supabase'
 import { todaySgt } from './dates'
 import { DEMO_IRAS, DEMO_MONTHLY, DEMO_PNL_TOTAL, DEMO_PNL_YEAR, DEMO_TRANSACTIONS } from './demoData'
-import type { IrasSummary, MonthlyPnl, MonthlySummary, NewTransaction, PnlTotals, Transaction } from '../types'
+import type {
+  IrasSummary, MonthlyPnl, MonthlySummary, NewTransaction, PnlTotals, Transaction, TransactionAttachment,
+} from '../types'
 
 type Mode = 'demo' | 'app'
 
 const DEMO_READ_ONLY = 'The demo is read-only. Sign in to record transactions.'
+
+// The private Storage bucket from 0010. Its size and type limits are repeated
+// here only to give a friendly message before a slow upload; the bucket is what
+// actually enforces them.
+const ATTACHMENT_BUCKET = 'transaction-files'
+const MAX_ATTACHMENT_BYTES = 10 * 1024 * 1024
+
+const EXTENSION_FOR_TYPE: Record<string, string> = {
+  'image/jpeg':      'jpg',
+  'image/png':       'png',
+  'image/webp':      'webp',
+  'image/heic':      'heic',
+  'image/heif':      'heif',
+  'application/pdf': 'pdf',
+}
+
+const TYPE_FOR_EXTENSION: Record<string, string> = {
+  jpg: 'image/jpeg', jpeg: 'image/jpeg', png: 'image/png', webp: 'image/webp',
+  heic: 'image/heic', heif: 'image/heif', pdf: 'application/pdf',
+}
+
+/** What should happen to a transaction's file when an edit is saved. */
+export type AttachmentChange =
+  | { kind: 'keep' }
+  | { kind: 'remove' }
+  | { kind: 'replace'; file: File }
 
 const MONTH_NAMES = [
   'January', 'February', 'March', 'April', 'May', 'June',
@@ -43,6 +71,8 @@ interface TransactionRow {
   client_id: string | null
   reference_no: string | null
   notes: string | null
+  attachment_path: string | null
+  attachment_name: string | null
 }
 
 interface PnlMonthRow {
@@ -61,7 +91,7 @@ interface IrasRow {
 }
 
 const TRANSACTION_COLUMNS =
-  'id, transaction_date, type, amount, category, description, payment_method, client_name, client_id, reference_no, notes'
+  'id, transaction_date, type, amount, category, description, payment_method, client_name, client_id, reference_no, notes, attachment_path, attachment_name'
 
 function toTransaction(r: TransactionRow): Transaction {
   return {
@@ -76,6 +106,7 @@ function toTransaction(r: TransactionRow): Transaction {
     clientId:      r.client_id ?? '',
     referenceNo:   r.reference_no ?? '',
     notes:         r.notes ?? '',
+    attachment:    r.attachment_path ? { path: r.attachment_path, name: r.attachment_name ?? '' } : undefined,
   }
 }
 
@@ -121,8 +152,7 @@ export async function listTransactions(mode: Mode): Promise<Transaction[]> {
   return (data as TransactionRow[]).map(toTransaction)
 }
 
-/** Saves a new transaction and returns it with the id the database assigned. */
-export async function createTransaction(mode: Mode, input: NewTransaction): Promise<Transaction> {
+function validateTransaction(input: NewTransaction): void {
   if (!input.date) throw new Error('Date is required.')
   if (!input.description.trim()) throw new Error('Description is required.')
   if (!Number.isFinite(input.amount) || input.amount <= 0) throw new Error('Amount must be more than zero.')
@@ -130,15 +160,68 @@ export async function createTransaction(mode: Mode, input: NewTransaction): Prom
   if (Math.round(input.amount * 100) / 100 !== input.amount) {
     throw new Error('Amounts can have at most 2 decimal places.')
   }
+}
+
+function attachmentColumns(attachment: TransactionAttachment | null) {
+  return { attachment_path: attachment?.path ?? null, attachment_name: attachment?.name ?? null }
+}
+
+/** Saves a new transaction, with its file if there is one, and returns it with the id the database assigned. */
+export async function createTransaction(mode: Mode, input: NewTransaction, file?: File): Promise<Transaction> {
+  validateTransaction(input)
   if (mode === 'demo') throw new Error(DEMO_READ_ONLY)
 
+  const uploaded = file ? await uploadAttachment(file) : null
   const { data, error } = await getSupabase()
     .from('transactions')
-    .insert(fromNewTransaction(input))
+    .insert({ ...fromNewTransaction(input), ...attachmentColumns(uploaded) })
     .select(TRANSACTION_COLUMNS)
     .single()
-  if (error) throw new Error(`Couldn't save the transaction: ${error.message}`)
+  if (error) {
+    if (uploaded) await removeAttachmentFile(uploaded.path)
+    throw new Error(`Couldn't save the transaction: ${error.message}`)
+  }
   return toTransaction(data as TransactionRow)
+}
+
+/**
+ * Saves changes to a transaction. Totals need no update of their own, because
+ * pnl_monthly and iras_summary add up the rows each time they're read.
+ *
+ * The order protects the row, which is the source of truth: upload the new file,
+ * save the row, and only then remove the old file. Whatever fails partway, the
+ * row never points at a file that isn't there.
+ */
+export async function updateTransaction(
+  mode: Mode,
+  current: Transaction,
+  input: NewTransaction,
+  change: AttachmentChange,
+): Promise<Transaction> {
+  validateTransaction(input)
+  if (mode === 'demo') throw new Error(DEMO_READ_ONLY)
+
+  const uploaded = change.kind === 'replace' ? await uploadAttachment(change.file) : null
+  // .select() makes the update report which rows it changed, for the same reason
+  // as in deleteTransaction below.
+  const { data, error } = await getSupabase()
+    .from('transactions')
+    .update({
+      ...fromNewTransaction(input),
+      ...(change.kind === 'keep' ? {} : attachmentColumns(uploaded)),
+    })
+    .eq('id', current.id)
+    .select(TRANSACTION_COLUMNS)
+  if (error || !data?.length) {
+    if (uploaded) await removeAttachmentFile(uploaded.path)
+    throw new Error(
+      error
+        ? `Couldn't save your changes: ${error.message}`
+        : "Couldn't save your changes: this transaction no longer exists. Reload the page.",
+    )
+  }
+  if (change.kind !== 'keep' && current.attachment) await removeAttachmentFile(current.attachment.path)
+  return toTransaction(data[0] as TransactionRow)
 }
 
 export async function deleteTransaction(mode: Mode, id: string): Promise<void> {
@@ -149,9 +232,60 @@ export async function deleteTransaction(mode: Mode, id: string): Promise<void> {
     .from('transactions')
     .delete()
     .eq('id', id)
-    .select('id')
+    .select('id, attachment_path')
   if (error) throw new Error(`Couldn't delete the transaction: ${error.message}`)
   if (!data?.length) throw new Error("Couldn't delete the transaction: it no longer exists. Reload the page.")
+  const path = (data[0] as { attachment_path: string | null }).attachment_path
+  if (path) await removeAttachmentFile(path)
+}
+
+// ── Attachments ────────────────────────────────────────────────────────────────
+
+// Some browsers report no type for HEIC photos, so fall back to the extension.
+function attachmentContentType(file: Pick<File, 'name' | 'type'>): string {
+  if (file.type) return file.type
+  return TYPE_FOR_EXTENSION[file.name.split('.').pop()?.toLowerCase() ?? ''] ?? ''
+}
+
+/** Why this file can't be attached, in words for the screen, or null if it can. */
+export function validateAttachment(file: Pick<File, 'name' | 'type' | 'size'>): string | null {
+  if (!EXTENSION_FOR_TYPE[attachmentContentType(file)]) return 'Please choose a photo or a PDF.'
+  if (file.size === 0) return 'That file is empty. Please choose another.'
+  if (file.size > MAX_ATTACHMENT_BYTES) return 'That file is over 10 MB. Please choose a smaller one.'
+  return null
+}
+
+async function uploadAttachment(file: File): Promise<TransactionAttachment> {
+  const problem = validateAttachment(file)
+  if (problem) throw new Error(problem)
+  const contentType = attachmentContentType(file)
+  const path = `${crypto.randomUUID()}.${EXTENSION_FOR_TYPE[contentType]}`
+  const { error } = await getSupabase().storage
+    .from(ATTACHMENT_BUCKET)
+    .upload(path, file, { contentType, upsert: false })
+  if (error) throw new Error(`Couldn't upload ${file.name}: ${error.message}`)
+  return { path, name: file.name }
+}
+
+// Tidying up, so it never throws: by this point the outcome is already decided,
+// and the worst a failure leaves behind is an unused file in a private bucket.
+async function removeAttachmentFile(path: string): Promise<void> {
+  try {
+    const { error } = await getSupabase().storage.from(ATTACHMENT_BUCKET).remove([path])
+    if (error) console.warn(`Couldn't remove the unused file ${path}: ${error.message}`)
+  } catch (err) {
+    console.warn(`Couldn't remove the unused file ${path}:`, err)
+  }
+}
+
+/** A link to the file that works for 5 minutes, because the bucket is private. */
+export async function getAttachmentUrl(mode: Mode, attachment: TransactionAttachment): Promise<string> {
+  if (mode === 'demo') throw new Error(DEMO_READ_ONLY)
+  const { data, error } = await getSupabase().storage
+    .from(ATTACHMENT_BUCKET)
+    .createSignedUrl(attachment.path, 300)
+  if (error) throw new Error(`Couldn't open ${attachment.name}: ${error.message}`)
+  return data.signedUrl
 }
 
 // ── Totals ─────────────────────────────────────────────────────────────────────
