@@ -2,12 +2,10 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import {
   listInvoices, getInvoiceSettings, saveDraft, deleteDraft, issueInvoice, voidInvoice,
   startReplacement, blankDraft, toDraft, finalFromDeposit, defaultTerms, issueProblem,
-  draftTotals, depositsAwaitingFinal, replacementOf, payableOf, storeIssuedPdf, getIssuedPdf, listClauses,
-  listServices,
+  draftTotals, depositsAwaitingFinal, replacementOf, payableOf, storeIssuedPdf, getIssuedPdf, listServices,
 } from '../lib/invoices'
 import { lineTotal, calcSubtotal, halfBalance } from '../lib/invoiceTotals'
 import { renderFromDraft } from '../lib/invoiceRender'
-import { appendText, stripStyles } from '../lib/invoiceText'
 import { renderInvoicePdf, openPdf } from '../lib/invoicePdf'
 import { listClients, clientLabels } from '../lib/clientData'
 import { formatSGD } from '../lib/money'
@@ -16,7 +14,7 @@ import InvoiceSettingsView from './InvoiceSettingsView'
 import FormattedText from '../components/FormattedText'
 import TermsEditor from '../components/TermsEditor'
 import type {
-  Client, Invoice, InvoiceAdjustment, InvoiceClause, InvoiceDraft, InvoiceKind, InvoiceLine, InvoiceService,
+  Client, Invoice, InvoiceAdjustment, InvoiceDraft, InvoiceKind, InvoiceLine, InvoiceService,
   InvoiceSettings, InvoiceTemplate,
 } from '../types'
 
@@ -52,7 +50,6 @@ export default function InvoiceView({ mode }: Props) {
   const [invoices, setInvoices] = useState<Invoice[]>([])
   const [settings, setSettings] = useState<InvoiceSettings | null>(null)
   const [clients, setClients]   = useState<Client[]>([])
-  const [clauses, setClauses]   = useState<InvoiceClause[]>([])
   const [services, setServices] = useState<InvoiceService[]>([])
   const [loading, setLoading]   = useState(true)
   const [error, setError]       = useState<string | null>(null)
@@ -60,8 +57,8 @@ export default function InvoiceView({ mode }: Props) {
 
   function reload(): Promise<void> {
     setError(null)
-    return Promise.all([listInvoices(mode), getInvoiceSettings(mode), listClients(mode), listClauses(mode), listServices(mode)])
-      .then(([inv, s, c, cl, sv]) => { setInvoices(inv); setSettings(s); setClients(c); setClauses(cl); setServices(sv) })
+    return Promise.all([listInvoices(mode), getInvoiceSettings(mode), listClients(mode), listServices(mode)])
+      .then(([inv, s, c, sv]) => { setInvoices(inv); setSettings(s); setClients(c); setServices(sv) })
       .catch(e => setError(errorText(e)))
       .finally(() => setLoading(false))
   }
@@ -101,11 +98,9 @@ export default function InvoiceView({ mode }: Props) {
       <InvoiceSettingsView
         mode={mode}
         settings={settings}
-        clauses={clauses}
         services={services}
         onBack={() => setScreen({ name: 'list' })}
         onSaved={setSettings}
-        onClausesChanged={setClauses}
         onServicesChanged={setServices}
       />
     )
@@ -121,7 +116,6 @@ export default function InvoiceView({ mode }: Props) {
         invoices={invoices}
         clients={clients}
         settings={settings}
-        clauses={clauses}
         services={services}
         onBack={() => { setScreen({ name: 'list' }); reload() }}
         onSaved={openSaved}
@@ -250,14 +244,13 @@ function InvoiceList({ mode, invoices, error, onNew, onOpen, onSettings }: {
 
 // ─── Draft editor ──────────────────────────────────────────────────────────────
 
-function DraftEditor({ mode, id, initial, invoices, clients, settings, clauses, services, onBack, onSaved, onDeleted }: {
+function DraftEditor({ mode, id, initial, invoices, clients, settings, services, onBack, onSaved, onDeleted }: {
   mode: 'demo' | 'app'
   id: string | null
   initial: InvoiceDraft
   invoices: Invoice[]
   clients: Client[]
   settings: InvoiceSettings
-  clauses: InvoiceClause[]
   services: InvoiceService[]
   onBack: () => void
   onSaved: (inv: Invoice, notice?: string) => Promise<void>
@@ -554,7 +547,6 @@ function DraftEditor({ mode, id, initial, invoices, clients, settings, clauses, 
                     placeholder="e.g. Design as discussed at the consultation on 3 Jan."
                     className={`${inputCls} resize-y`}
                   />
-                  <ClausePicker clauses={clauses} onPick={body => update({ clientNote: appendText(draft.clientNote, stripStyles(body)) })} />
                 </Field>
               </div>
             </Section>
@@ -567,7 +559,6 @@ function DraftEditor({ mode, id, initial, invoices, clients, settings, clauses, 
                     line={line}
                     index={idx}
                     canRemove={draft.lines.length > 1}
-                    clauses={clauses}
                     services={services}
                     onChange={patch => updateLine(idx, patch)}
                     onRemove={() => update({ lines: draft.lines.filter((_, i) => i !== idx) })}
@@ -608,7 +599,6 @@ function DraftEditor({ mode, id, initial, invoices, clients, settings, clauses, 
                 onChange={terms => update({ terms })}
                 placeholder="No default terms yet for this template."
               />
-              <ClausePicker clauses={clauses} onPick={body => update({ terms: appendText(draft.terms, body) })} />
               <div className="flex justify-end mt-1.5">
                 {draft.terms !== defaultTerms(settings, draft.template) && (
                   <button
@@ -1090,31 +1080,10 @@ function DateField({ label, value, onChange }: {
   )
 }
 
-// Copies a clause's wording onto the end of a text box. It's a copy, so editing
-// the clause later doesn't touch this invoice. A native <select> opens the
-// phone's own picker, which is easier to use there than a custom dropdown.
-function ClausePicker({ clauses, onPick }: { clauses: InvoiceClause[]; onPick: (body: string) => void }) {
-  if (clauses.length === 0) return null
-  return (
-    <select
-      value=""
-      onChange={e => {
-        const clause = clauses.find(c => c.id === e.target.value)
-        if (clause) onPick(clause.body)
-      }}
-      aria-label="Insert a clause"
-      className="mt-1.5 max-w-full text-xs text-rose-800 bg-white border border-rose-200 rounded-lg px-2 py-1
-                 focus:outline-none focus:ring-2 focus:ring-rose-300"
-    >
-      <option value="">+ Insert clause…</option>
-      {clauses.map(c => <option key={c.id} value={c.id}>{c.title}</option>)}
-    </select>
-  )
-}
-
 // Fills a line from the service library. It's a copy, so editing the library later
 // doesn't touch this invoice, and the line can still be changed here. A service
-// with no standard price leaves whatever amount is already typed.
+// with no standard price leaves whatever amount is already typed. A native <select>
+// opens the phone's own picker, which is easier to use there than a custom dropdown.
 function ServicePicker({ services, onPick }: {
   services: InvoiceService[]
   onPick: (patch: Partial<InvoiceLine>) => void
@@ -1239,8 +1208,8 @@ function PaymentRows({ rows, subtotal, collectsEverything, onChange }: {
   )
 }
 
-function LineItemRow({ line, index, canRemove, clauses, services, onChange, onRemove }: {
-  line: InvoiceLine; index: number; canRemove: boolean; clauses: InvoiceClause[]; services: InvoiceService[]
+function LineItemRow({ line, index, canRemove, services, onChange, onRemove }: {
+  line: InvoiceLine; index: number; canRemove: boolean; services: InvoiceService[]
   onChange: (p: Partial<InvoiceLine>) => void; onRemove: () => void
 }) {
   return (
@@ -1264,7 +1233,6 @@ function LineItemRow({ line, index, canRemove, clauses, services, onChange, onRe
               placeholder="e.g. Custom-made for client use. Lines starting with “- ” print as bullets."
               className={`${inputCls} resize-y`}
             />
-            <ClausePicker clauses={clauses} onPick={body => onChange({ description: appendText(line.description, stripStyles(body)) })} />
           </Field>
           <Field label="Quantity">
             <input

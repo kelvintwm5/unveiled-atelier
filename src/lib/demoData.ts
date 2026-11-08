@@ -2,7 +2,7 @@
 // Fictional, so portfolio visitors can explore the full UI without signing in.
 
 import type {
-  Transaction, IrasSummary, MonthlySummary, PnlTotals, Client, ClientActivity, Invoice, InvoiceClause,
+  Transaction, IrasSummary, MonthlySummary, PnlTotals, Client, ClientActivity, Invoice,
   InvoiceService, InvoiceSettings,
 } from '../types'
 
@@ -341,13 +341,4 @@ export const DEMO_SERVICES: InvoiceService[] = [
   { id: '00000000-0000-4000-c000-000000000002', title: 'Bespoke cathedral veil',
     description: '- Made to measure\n- Design consultation and two fittings included',
     defaultAmount: null },
-]
-
-export const DEMO_CLAUSES: InvoiceClause[] = [
-  { id: '00000000-0000-4000-b000-000000000001', title: 'Cleaning included',
-    body: '- Professional steam cleaning after return is included.' },
-  { id: '00000000-0000-4000-b000-000000000002', title: 'Late return fee',
-    body: '- Late returns are charged S$20 per day.' },
-  { id: '00000000-0000-4000-b000-000000000003', title: 'Design proposal reference',
-    body: 'Design as outlined in the proposal dated [date].' },
 ]

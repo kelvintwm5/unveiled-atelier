@@ -42,16 +42,6 @@ export function parseText(text: string): TextBlock[] {
   return blocks
 }
 
-/**
- * Adds a clause to the end of some text, on its own line. Appending (rather than
- * inserting at the cursor) behaves the same on a phone, where the cursor is hard
- * to place.
- */
-export function appendText(text: string, addition: string): string {
-  const base = text.replace(/\s+$/, '')
-  return base ? `${base}\n${addition}` : addition
-}
-
 // ── Inline styles ─────────────────────────────────────────────────────────────
 
 export interface InlineSpan {
@@ -76,7 +66,7 @@ const ESCAPED_TAG = /&lt;(?=\/?[biu]>)/g
 
 const unescapeText = (text: string) => text.replace(ESCAPED_TAG, '<')
 
-/** The words without their styling, for text boxes that can't show it. */
+/** The words without their styling. */
 export function stripStyles(text: string): string {
   return unescapeText(text.replace(TAG, ''))
 }
