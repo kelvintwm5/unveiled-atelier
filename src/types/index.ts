@@ -14,9 +14,18 @@ export interface Transaction {
   clientId: string         // Client.id, or '' when not linked to a tracked client
   referenceNo: string      // receipt or invoice number
   notes: string
+  attachment?: TransactionAttachment
 }
 
-export type NewTransaction = Omit<Transaction, 'id'>
+// One uploaded file, usually a receipt. path is the object's name in Storage;
+// name is the file's original name, for display.
+export interface TransactionAttachment {
+  path: string
+  name: string
+}
+
+// The file travels separately, because it has to be uploaded before the row is saved.
+export type NewTransaction = Omit<Transaction, 'id' | 'attachment'>
 
 // The four lines of the IRAS Form B/B1 statement for one calendar year.
 export interface IrasSummary {

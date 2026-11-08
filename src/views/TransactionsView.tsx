@@ -1,5 +1,9 @@
 import { useEffect, useMemo, useState } from 'react'
-import { listTransactions, createTransaction, deleteTransaction } from '../lib/transactions'
+import {
+  listTransactions, createTransaction, updateTransaction, deleteTransaction,
+  getAttachmentUrl, validateAttachment, type AttachmentChange,
+} from '../lib/transactions'
+import { openPdf } from '../lib/invoicePdf'
 import { listClients, clientLabels } from '../lib/clientData'
 import { formatSGD } from '../lib/money'
 import { todaySgt } from '../lib/dates'
@@ -42,10 +46,12 @@ export default function TransactionsView({ mode }: Props) {
   const [filterYear, setFilterYear]   = useState<string>('all')
   const [filterMonth, setFilterMonth] = useState<string>('all')
   const [showAdd, setShowAdd] = useState(false)
+  const [editing, setEditing] = useState<Transaction | null>(null)
   const [deletingId, setDeletingId]   = useState<string | null>(null)
   const [actionError, setActionError] = useState<string | null>(null)
+  const [blockedFile, setBlockedFile] = useState<{ url: string; name: string } | null>(null)
 
-  // Demo mode is read-only, so there is nothing to delete there.
+  // Demo mode is read-only, so there is nothing to edit or delete there.
   const canEdit = mode === 'app'
   const colCount = COLUMNS.length + (canEdit ? 1 : 0)
 
@@ -82,6 +88,19 @@ export default function TransactionsView({ mode }: Props) {
     }
   }
 
+  async function handleOpenAttachment(attachment: NonNullable<Transaction['attachment']>) {
+    setActionError(null)
+    setBlockedFile(null)
+    try {
+      // openPdf is about tabs, not PDFs: it opens one inside the tap so phones
+      // don't block it, and hands back the link if the browser blocks it anyway.
+      const url = await openPdf(() => getAttachmentUrl(mode, attachment))
+      if (url) setBlockedFile({ url, name: attachment.name })
+    } catch (err) {
+      setActionError(err instanceof Error ? err.message : String(err))
+    }
+  }
+
   // Derive available years from the data
   const years = useMemo(() => {
     const set = new Set(data.map(tx => tx.date.slice(0, 4)).filter(Boolean))
@@ -100,12 +119,13 @@ export default function TransactionsView({ mode }: Props) {
   return (
     <div className="h-full flex flex-col">
 
-      {showAdd && (
-        <AddTransactionModal
+      {(showAdd || editing) && (
+        <TransactionModal
           mode={mode}
+          transaction={editing ?? undefined}
           categories={categories}
-          onClose={() => setShowAdd(false)}
-          onSaved={() => { setShowAdd(false); reload() }}
+          onClose={() => { setShowAdd(false); setEditing(null) }}
+          onSaved={() => { setShowAdd(false); setEditing(null); reload() }}
         />
       )}
 
@@ -186,6 +206,14 @@ export default function TransactionsView({ mode }: Props) {
             {actionError}
           </p>
         )}
+        {blockedFile && (
+          <p className="mb-3 bg-stone-100 border border-stone-200 rounded-lg px-4 py-2.5 text-stone-600 text-sm">
+            Your browser blocked the new tab.{' '}
+            <a href={blockedFile.url} target="_blank" rel="noreferrer" className="text-rose-800 underline">
+              Open {blockedFile.name}
+            </a>
+          </p>
+        )}
         <div className="bg-white rounded-xl border border-stone-200 overflow-x-auto">
           <table className="w-full text-sm">
 
@@ -198,7 +226,11 @@ export default function TransactionsView({ mode }: Props) {
                     {col.label}
                   </th>
                 ))}
-                {canEdit && <th className="px-2 py-3"><span className="sr-only">Actions</span></th>}
+                {canEdit && (
+                  <th className="px-2 py-3 sticky right-0 bg-stone-50 border-l border-stone-200">
+                    <span className="sr-only">Actions</span>
+                  </th>
+                )}
               </tr>
             </thead>
 
@@ -227,7 +259,7 @@ export default function TransactionsView({ mode }: Props) {
               )}
 
               {!loading && !error && filtered.map(tx => (
-                <tr key={tx.id} className="border-b border-stone-100 hover:bg-stone-50 transition-colors">
+                <tr key={tx.id} className="group border-b border-stone-100 hover:bg-stone-50 transition-colors">
                   <td className="px-4 py-3 text-stone-500 whitespace-nowrap">{tx.date}</td>
                   <td className="px-4 py-3">
                     <span className={[
@@ -252,20 +284,48 @@ export default function TransactionsView({ mode }: Props) {
                   <td className="px-4 py-3 text-stone-400 whitespace-nowrap">{tx.referenceNo}</td>
                   <td className="px-4 py-3 text-stone-400 max-w-xs truncate">{tx.notes}</td>
                   {canEdit && (
-                    <td className="px-2 py-3 text-right">
-                      <button
-                        onClick={() => handleDelete(tx)}
-                        disabled={deletingId !== null}
-                        aria-label={`Delete ${tx.description}`}
-                        title="Delete"
-                        className="p-1.5 rounded-md text-stone-300 hover:text-red-600 hover:bg-red-50
-                                   transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
-                      >
-                        <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5}
-                            d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
-                        </svg>
-                      </button>
+                    // Sticky because this column sits past nine others: on a phone
+                    // it would otherwise take a long sideways scroll to reach.
+                    <td className="px-2 py-3 sticky right-0 bg-white group-hover:bg-stone-50
+                                   transition-colors border-l border-stone-100">
+                      <div className="flex items-center justify-end gap-0.5">
+                        {tx.attachment && (
+                          <button
+                            onClick={() => handleOpenAttachment(tx.attachment!)}
+                            aria-label={`Open ${tx.attachment.name}`}
+                            title={tx.attachment.name}
+                            className="p-1.5 rounded-md text-rose-800 hover:bg-rose-50 transition-colors"
+                          >
+                            <PaperclipIcon />
+                          </button>
+                        )}
+                        <button
+                          onClick={() => setEditing(tx)}
+                          disabled={deletingId !== null}
+                          aria-label={`Edit ${tx.description}`}
+                          title="Edit"
+                          className="p-1.5 rounded-md text-stone-400 hover:text-stone-700 hover:bg-stone-100
+                                     transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+                        >
+                          <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5}
+                              d="M16.862 4.487l1.687-1.688a1.875 1.875 0 112.652 2.652L6.832 19.82a4.5 4.5 0 01-1.897 1.13l-2.685.8.8-2.685a4.5 4.5 0 011.13-1.897L16.863 4.487z" />
+                          </svg>
+                        </button>
+                        <button
+                          onClick={() => handleDelete(tx)}
+                          disabled={deletingId !== null}
+                          aria-label={`Delete ${tx.description}`}
+                          title="Delete"
+                          className="p-1.5 rounded-md text-stone-300 hover:text-red-600 hover:bg-red-50
+                                     transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+                        >
+                          <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5}
+                              d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                          </svg>
+                        </button>
+                      </div>
                     </td>
                   )}
                 </tr>
@@ -289,7 +349,7 @@ export default function TransactionsView({ mode }: Props) {
 }
 
 // ---------------------------------------------------------------------------
-// Add Transaction Modal
+// Add / Edit Transaction Modal
 // ---------------------------------------------------------------------------
 
 const EMPTY_FORM = {
@@ -305,23 +365,69 @@ const EMPTY_FORM = {
   notes: '',
 }
 
-function AddTransactionModal({
+function formFromTransaction(tx: Transaction): typeof EMPTY_FORM {
+  return {
+    date:          tx.date,
+    type:          tx.type,
+    description:   tx.description,
+    category:      tx.category,
+    amount:        tx.amount.toFixed(2),
+    paymentMethod: tx.paymentMethod,
+    clientName:    tx.clientName,
+    clientId:      tx.clientId,
+    referenceNo:   tx.referenceNo,
+    notes:         tx.notes,
+  }
+}
+
+function TransactionModal({
   mode,
+  transaction,
   categories,
   onClose,
   onSaved,
 }: {
   mode: 'demo' | 'app'
+  transaction?: Transaction     // present when editing, absent when adding
   categories: string[]
   onClose: () => void
   onSaved: () => void
 }) {
   // Today in Singapore: the UTC date is still yesterday before 08:00 SGT.
-  const [form, setForm] = useState({ ...EMPTY_FORM, date: todaySgt() })
+  const [form, setForm] = useState(
+    () => transaction ? formFromTransaction(transaction) : { ...EMPTY_FORM, date: todaySgt() },
+  )
   const [saving, setSaving] = useState(false)
   const [error, setError]   = useState<string | null>(null)
   const [clients, setClients] = useState<Client[]>([])
   const [clientsError, setClientsError] = useState<string | null>(null)
+  // Nothing happens to files until Save, so Cancel always leaves things as they were.
+  const [newFile, setNewFile] = useState<File | null>(null)
+  const [removeExisting, setRemoveExisting] = useState(false)
+  const [fileError, setFileError] = useState<string | null>(null)
+
+  const existingFile = transaction?.attachment
+  // A client deleted since this row was saved isn't in the list, but the row is
+  // still linked to them. Without its own option the dropdown would show "Not in
+  // client list" and saving would quietly drop the link.
+  const linkedClientMissing = Boolean(
+    transaction?.clientId && !clients.some(c => c.id === transaction.clientId),
+  )
+
+  // An upload can take a while on a phone, and closing the form wouldn't stop it.
+  function close() {
+    if (!saving) onClose()
+  }
+
+  function handleFileChosen(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0]
+    // Cleared so that choosing the same file again still fires this handler.
+    e.target.value = ''
+    if (!file) return
+    const problem = validateAttachment(file)
+    setFileError(problem)
+    if (!problem) setNewFile(file)
+  }
 
   // Linking to a tracked client is optional, so if the list can't load the form
   // still works with a typed name.
@@ -351,21 +457,32 @@ function AddTransactionModal({
     setSaving(true)
     setError(null)
     // A linked client's name is saved as it is today, so the ledger still reads
-    // correctly if the client record is renamed later.
+    // correctly if the client record is renamed later. An edit that leaves the
+    // client alone keeps the name from the day, and doesn't need the client list,
+    // which may have failed to load or no longer include them.
+    const keptLink = transaction && form.clientId !== '' && form.clientId === transaction.clientId
     const linked = clients.find(c => c.id === form.clientId)
+    const input = {
+      date:          form.date,
+      type:          form.type,
+      description:   form.description,
+      category:      form.category,
+      amount,
+      paymentMethod: form.paymentMethod,
+      clientName:    keptLink ? transaction.clientName : linked ? linked.name : form.clientName,
+      clientId:      keptLink ? transaction.clientId : linked ? linked.id : '',
+      referenceNo:   form.referenceNo,
+      notes:         form.notes,
+    }
+    const change: AttachmentChange = newFile
+      ? { kind: 'replace', file: newFile }
+      : removeExisting ? { kind: 'remove' } : { kind: 'keep' }
     try {
-      await createTransaction(mode, {
-        date:          form.date,
-        type:          form.type,
-        description:   form.description,
-        category:      form.category,
-        amount,
-        paymentMethod: form.paymentMethod,
-        clientName:    linked ? linked.name : form.clientName,
-        clientId:      linked ? linked.id : '',
-        referenceNo:   form.referenceNo,
-        notes:         form.notes,
-      })
+      if (transaction) {
+        await updateTransaction(mode, transaction, input, change)
+      } else {
+        await createTransaction(mode, input, newFile ?? undefined)
+      }
       onSaved()
     } catch (err: unknown) {
       setError(err instanceof Error ? err.message : 'Something went wrong.')
@@ -376,7 +493,7 @@ function AddTransactionModal({
   return (
     <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center">
       {/* Backdrop */}
-      <div className="absolute inset-0 bg-black/50" onClick={onClose} />
+      <div className="absolute inset-0 bg-black/50" onClick={close} />
 
       {/* Card */}
       <div className="relative w-full sm:max-w-lg bg-white sm:rounded-2xl rounded-t-2xl
@@ -384,8 +501,10 @@ function AddTransactionModal({
 
         {/* Header */}
         <div className="flex items-center justify-between px-6 py-4 border-b border-stone-200 shrink-0">
-          <h3 className="text-base font-semibold text-stone-800">Add Transaction</h3>
-          <button onClick={onClose} className="text-stone-400 hover:text-stone-600 transition-colors">
+          <h3 className="text-base font-semibold text-stone-800">
+            {transaction ? 'Edit Transaction' : 'Add Transaction'}
+          </h3>
+          <button onClick={close} aria-label="Close" className="text-stone-400 hover:text-stone-600 transition-colors">
             <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
             </svg>
@@ -478,6 +597,9 @@ function AddTransactionModal({
                 className={inputCls}
               >
                 <option value="">Not in client list</option>
+                {linkedClientMissing && (
+                  <option value={transaction?.clientId}>{transaction?.clientName || 'Linked client'}</option>
+                )}
                 {sortedClients.map(c => (
                   <option key={c.id} value={c.id}>{labels.get(c.id)}</option>
                 ))}
@@ -509,6 +631,55 @@ function AddTransactionModal({
               />
             </Field>
 
+            <Field label="Receipt or file" className="col-span-2">
+              {(newFile || (existingFile && !removeExisting)) && (
+                <div className="flex items-center gap-2 mb-2 text-sm text-stone-700">
+                  <span className="text-stone-400 shrink-0"><PaperclipIcon /></span>
+                  <span className="truncate min-w-0">{newFile ? newFile.name : existingFile?.name}</span>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setFileError(null)
+                      if (newFile) setNewFile(null)
+                      else setRemoveExisting(true)
+                    }}
+                    className="ml-auto shrink-0 text-xs text-stone-400 hover:text-red-600 underline transition-colors"
+                  >
+                    Remove
+                  </button>
+                </div>
+              )}
+              {!newFile && existingFile && removeExisting && (
+                <p className="mb-2 text-xs text-stone-500">
+                  {existingFile.name} will be deleted when you save.{' '}
+                  <button
+                    type="button"
+                    onClick={() => { setFileError(null); setRemoveExisting(false) }}
+                    className="underline hover:text-stone-700"
+                  >
+                    Undo
+                  </button>
+                </p>
+              )}
+              {newFile && existingFile && !removeExisting && (
+                <p className="mb-2 text-xs text-stone-500">Replaces {existingFile.name} when you save.</p>
+              )}
+              {/* A real file input, visually hidden: on a phone this is what offers
+                  the camera, photo library or Files. */}
+              <label className="inline-block cursor-pointer rounded-lg border border-stone-200 px-3 py-2 text-sm
+                                text-stone-600 hover:bg-stone-50 transition-colors focus-within:ring-2 focus-within:ring-rose-300">
+                {newFile || (existingFile && !removeExisting) ? 'Choose a different file' : 'Choose photo or PDF'}
+                <input
+                  type="file"
+                  accept="image/*,application/pdf"
+                  onChange={handleFileChosen}
+                  className="sr-only"
+                />
+              </label>
+              <p className="text-stone-400 text-xs mt-1.5">Photo or PDF, up to 10 MB.</p>
+              {fileError && <p className="text-red-500 text-xs mt-1">{fileError}</p>}
+            </Field>
+
           </div>
 
           {/* Footer */}
@@ -517,9 +688,10 @@ function AddTransactionModal({
             <div className="flex gap-3">
               <button
                 type="button"
-                onClick={onClose}
+                onClick={close}
+                disabled={saving}
                 className="flex-1 py-2.5 rounded-xl border border-stone-200 text-sm
-                           text-stone-600 hover:bg-stone-50 transition-colors"
+                           text-stone-600 hover:bg-stone-50 transition-colors disabled:opacity-50"
               >
                 Cancel
               </button>
@@ -529,13 +701,22 @@ function AddTransactionModal({
                 className="flex-1 py-2.5 rounded-xl bg-rose-800 hover:bg-rose-700 text-white
                            text-sm font-medium transition-colors disabled:opacity-50"
               >
-                {saving ? 'Saving…' : 'Save Transaction'}
+                {saving ? (newFile ? 'Uploading…' : 'Saving…') : transaction ? 'Save Changes' : 'Save Transaction'}
               </button>
             </div>
           </div>
         </form>
       </div>
     </div>
+  )
+}
+
+function PaperclipIcon() {
+  return (
+    <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5}
+        d="M18.375 12.739l-7.693 7.693a4.5 4.5 0 01-6.364-6.364l10.94-10.94A3 3 0 1119.5 7.372L8.552 18.32a1.5 1.5 0 01-2.121-2.121l7.81-7.81" />
+    </svg>
   )
 }
 
