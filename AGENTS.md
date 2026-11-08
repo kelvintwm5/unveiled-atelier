@@ -134,11 +134,12 @@ npm test         # Vitest, for the pure domain modules in src/lib
   UA-2026-1820, so the database counter (`invoice_counter`, 0006) starts at 1821.
   Only `issue_invoice()` assigns numbers.
 - **Invoice kinds:** template `rental` | `bespoke`, type `full` | `deposit` | `final`.
-  The type sets the wording on the PDF and whether a final links to its deposit. It
-  doesn't drive any money.
+  The type sets the wording on the PDF, whether a final links to its deposit, and
+  which amounts the Payment form asks for. Only the stored rows drive the money.
 - **Invoice totals:** service lines add up to the subtotal. Optional payment rows
   below it each add or subtract: `amount payable = subtotal + adds - deducts`. There
-  is no fixed deposit percentage. Esther decides each row.
+  is no fixed deposit percentage. Esther enters the amounts in the Payment form,
+  and the rows are worked out from them.
   - Service lines and payment rows share `invoice_line_items`, told apart by
     `line_type` (`service` | `add` | `deduct`). Lib code exposes them separately as
     `lines` and `adjustments`.
@@ -229,6 +230,16 @@ Ask before you:
 
 ## Decisions
 
+- **2026-11-08: the Payment section asks for amounts, not rows.**
+  - Why: Esther knows the deposit she's collecting. Adding a "Balance due later" row
+    and choosing Subtract made her do the arithmetic and think like a bookkeeper.
+  - How: `readPayment` and `writePayment` in `invoiceTotals.ts` turn stored rows into
+    the form and back. The database and `issue_invoice()` didn't change.
+  - The balance now follows a changed service price, while charges, discounts and
+    the deposit amounts stay fixed figures.
+  - A refundable security deposit never counts towards the balance, and a final
+    doesn't take it off as "deposit paid".
+
 - **2026-11-08: the clause library is removed from the app.**
   - Why: Kelvin's call. Reusable wording now lives in the service library and the
     default terms.
@@ -237,8 +248,9 @@ Ask before you:
 
 - **2026-11-08: invoice totals come from rows Esther adds, not a 50% rule.**
   - Why: she may collect in full upfront or vary the deposit and security deposit.
-  - What it costs: row amounts are fixed figures, so one doesn't follow if a service
-    price changes afterwards. The Totals box and the issue confirmation show the result.
+  - What it costs: amounts are fixed figures, so a deposit or discount doesn't follow
+    if a service price changes afterwards. The Totals box and the issue confirmation
+    show the result.
   - Invoices issued under the 50% rule keep their frozen totals. Reissuing one
     recreates equivalent rows (`adjustmentsForReissue`) so the amount carries over.
 

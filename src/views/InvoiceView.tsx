@@ -4,7 +4,9 @@ import {
   startReplacement, blankDraft, toDraft, finalFromDeposit, defaultTerms, issueProblem,
   draftTotals, depositsAwaitingFinal, replacementOf, payableOf, storeIssuedPdf, getIssuedPdf, listServices,
 } from '../lib/invoices'
-import { lineTotal, calcSubtotal, halfBalance } from '../lib/invoiceTotals'
+import {
+  lineTotal, calcSubtotal, paymentProblem, priceAfterExtras, readPayment, writePayment, type PaymentForm,
+} from '../lib/invoiceTotals'
 import { renderFromDraft } from '../lib/invoiceRender'
 import { renderInvoicePdf, openPdf } from '../lib/invoicePdf'
 import { listClients, clientLabels } from '../lib/clientData'
@@ -256,7 +258,10 @@ function DraftEditor({ mode, id, initial, invoices, clients, settings, services,
   onSaved: (inv: Invoice, notice?: string) => Promise<void>
   onDeleted: () => void
 }) {
-  const [draft, setDraft] = useState<InvoiceDraft>(initial)
+  const [edited, setDraft] = useState<InvoiceDraft>(initial)
+  const [payment, setPayment] = useState<PaymentForm>(
+    () => readPayment(initial.kind, calcSubtotal(initial.lines), initial.adjustments),
+  )
   const [busy, setBusy]   = useState<'save' | 'issue' | 'delete' | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [saved, setSaved] = useState(false)
@@ -268,6 +273,15 @@ function DraftEditor({ mode, id, initial, invoices, clients, settings, services,
   // it's revoked, so the old one is freed whenever a new one replaces it.
   const previewUrl = useRef<string | null>(null)
 
+  const subtotal = calcSubtotal(edited.lines)
+  // The form is what Esther edits and the rows are derived from it. A typed deposit
+  // has to outlive the moments a half-typed price is smaller than it, which it
+  // couldn't if the balance row were the only record.
+  const draft = useMemo(
+    () => ({ ...edited, adjustments: writePayment(edited.kind, subtotal, payment) }),
+    [edited, subtotal, payment],
+  )
+
   const labels   = useMemo(() => clientLabels(clients), [clients])
   const replaces = invoices.find(i => i.id === draft.replacesInvoiceId)
   // The linked deposit stays selectable even once a final (this one) collects its balance.
@@ -277,7 +291,6 @@ function DraftEditor({ mode, id, initial, invoices, clients, settings, services,
     return linked && !open.includes(linked) ? [linked, ...open] : open
   }, [invoices, draft.depositInvoiceId])
 
-  const subtotal = calcSubtotal(draft.lines)
   const totals   = draftTotals(draft)
   const noPaymentDetails = !settings.paynow.trim() && !settings.bankAccountNo.trim()
 
@@ -335,21 +348,27 @@ function DraftEditor({ mode, id, initial, invoices, clients, settings, services,
   function setKind(kind: InvoiceKind) {
     // Only a final links to a deposit.
     update(kind === 'final' ? { kind } : { kind, depositInvoiceId: '', legacyDepositNo: '' })
+    if (kind !== 'final') setPayment(p => ({ ...p, depositLabel: '' }))
+  }
+
+  function updatePayment(next: PaymentForm) {
+    setPayment(next)
+    setSaved(false)
   }
 
   function pickDeposit(depositId: string) {
     const dep = invoices.find(i => i.id === depositId)
     if (dep) {
-      setDraft(d => {
-        const next = finalFromDeposit(d, dep)
-        // The deposit may use the other template; unedited terms follow it, as in setTemplate.
-        return d.terms === defaultTerms(settings, d.template)
-          ? { ...next, terms: defaultTerms(settings, next.template) }
-          : next
-      })
+      const next = finalFromDeposit(edited, dep)
+      // The deposit may use the other template; unedited terms follow it, as in setTemplate.
+      setDraft(edited.terms === defaultTerms(settings, edited.template)
+        ? { ...next, terms: defaultTerms(settings, next.template) }
+        : next)
+      setPayment(readPayment('final', calcSubtotal(next.lines), next.adjustments))
       setSaved(false)
     } else {
       update({ depositInvoiceId: '' })
+      setPayment(p => ({ ...p, depositLabel: '' }))
     }
   }
 
@@ -379,7 +398,7 @@ function DraftEditor({ mode, id, initial, invoices, clients, settings, services,
   }
 
   async function handleIssue() {
-    const problem = issueProblem(draft)
+    const problem = paymentProblem(draft.kind, subtotal, payment) ?? issueProblem(draft)
     if (problem) { setError(problem); return }
     const ok = window.confirm(
       `Issue this invoice for ${formatSGD(totals[totals.length - 1].amount)}?\n\n` +
@@ -455,11 +474,11 @@ function DraftEditor({ mode, id, initial, invoices, clients, settings, services,
                   onChange={v => setTemplate(v as InvoiceTemplate)}
                 />
                 <SegmentGroup
-                  label="Invoice"
+                  label="This invoice is for"
                   options={[
                     { value: 'full', label: 'Full payment' },
                     { value: 'deposit', label: 'Deposit' },
-                    { value: 'final', label: 'Final' },
+                    { value: 'final', label: 'Final payment' },
                   ]}
                   value={draft.kind}
                   onChange={v => setKind(v as InvoiceKind)}
@@ -472,7 +491,7 @@ function DraftEditor({ mode, id, initial, invoices, clients, settings, services,
                 <div className="space-y-3">
                   <p className="text-xs text-stone-500">
                     A final invoice collects the rest of a deposit invoice's total. Pick the deposit
-                    to copy its client, dates and line items, and take off what it billed.
+                    to copy its client, dates and line items, and take off the deposit it collected.
                   </p>
                   <Field label="Deposit invoice">
                     <select
@@ -578,11 +597,12 @@ function DraftEditor({ mode, id, initial, invoices, clients, settings, services,
             </Section>
 
             <Section title="Payment">
-              <PaymentRows
-                rows={draft.adjustments}
+              <PaymentSection
+                kind={draft.kind}
                 subtotal={subtotal}
-                collectsEverything={draft.kind !== 'full' && draft.adjustments.length === 0 && subtotal > 0}
-                onChange={adjustments => update({ adjustments })}
+                form={payment}
+                linkedDepositNo={invoices.find(i => i.id === draft.depositInvoiceId)?.invoiceNo ?? ''}
+                onChange={updatePayment}
               />
             </Section>
 
@@ -1111,98 +1131,119 @@ function ServicePicker({ services, onPick }: {
   )
 }
 
-// Starting points for the rows Esther adds most. Nothing is applied automatically,
-// and label and amount stay editable, so no rule about deposits lives here.
-const PAYMENT_STARTERS: { label: string; direction: InvoiceAdjustment['direction']; startsAtHalf?: boolean }[] = [
-  { label: 'Balance due later',           direction: 'deduct', startsAtHalf: true },
-  { label: 'Less: deposit paid',          direction: 'deduct' },
-  { label: 'Refundable security deposit', direction: 'add' },
-]
-
-function PaymentRows({ rows, subtotal, collectsEverything, onChange }: {
-  rows: InvoiceAdjustment[]
-  subtotal: number
-  collectsEverything: boolean
-  onChange: (rows: InvoiceAdjustment[]) => void
+function AmountInput({ value, onChange, ariaLabel }: {
+  value: number; onChange: (v: number) => void; ariaLabel: string
 }) {
-  function patch(idx: number, change: Partial<InvoiceAdjustment>) {
-    onChange(rows.map((r, i) => (i === idx ? { ...r, ...change } : r)))
+  return (
+    <input
+      type="number" inputMode="decimal" min={0.01} step={0.01} value={value || ''}
+      onChange={e => onChange(parseFloat(e.target.value) || 0)}
+      placeholder="0.00"
+      aria-label={ariaLabel}
+      className={inputCls}
+    />
+  )
+}
+
+// Asks only for what Esther already knows for this type of invoice. The rows that
+// print come from invoiceTotals.ts, so nobody has to work out a balance here.
+function PaymentSection({ kind, subtotal, form, linkedDepositNo, onChange }: {
+  kind: InvoiceKind
+  subtotal: number
+  form: PaymentForm
+  linkedDepositNo: string
+  onChange: (form: PaymentForm) => void
+}) {
+  // Only once there's something to compare: an empty deposit isn't an error while typing.
+  const problem = subtotal > 0 && form.depositAmount > 0 ? paymentProblem(kind, subtotal, form) : null
+  const collectsAll = kind === 'deposit' && form.depositAmount > 0
+    && form.depositAmount === priceAfterExtras(subtotal, form.extras)
+  const depositName = kind === 'deposit' ? 'Deposit to collect now' : 'Deposit already paid'
+
+  function patchExtra(idx: number, change: Partial<InvoiceAdjustment>) {
+    onChange({ ...form, extras: form.extras.map((e, i) => (i === idx ? { ...e, ...change } : e)) })
+  }
+
+  function addExtra(direction: InvoiceAdjustment['direction']) {
+    onChange({ ...form, extras: [...form.extras, { label: '', direction, amount: 0 }] })
   }
 
   return (
     <div className="space-y-3">
-      {rows.length === 0 && (
-        <p className="text-xs text-stone-500">
-          {collectsEverything
-            ? 'No rows yet, so this invoice collects the full amount. Add a row to collect only part of it now.'
-            : 'Optional. Add a row for anything that changes what the client pays now.'}
-        </p>
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+        {kind !== 'full' && (
+          <Field label={`${depositName} (SGD)${kind === 'deposit' ? ' *' : ''}`}>
+            <AmountInput
+              ariaLabel={depositName}
+              value={form.depositAmount}
+              onChange={depositAmount => onChange({ ...form, depositAmount })}
+            />
+          </Field>
+        )}
+        <Field label="Refundable security deposit (SGD, optional)">
+          <AmountInput
+            ariaLabel="Refundable security deposit"
+            value={form.securityDeposit}
+            onChange={securityDeposit => onChange({ ...form, securityDeposit })}
+          />
+        </Field>
+      </div>
+
+      {problem && <p className="text-red-600 text-xs">{problem}</p>}
+      {collectsAll && <p className="text-xs text-stone-500">That's the full amount, so nothing is left to pay later.</p>}
+      {kind === 'final' && linkedDepositNo && (
+        <p className="text-xs text-stone-400">Filled in from {linkedDepositNo}. You can change it.</p>
       )}
 
-      {rows.map((row, idx) => (
-        <div key={idx} className="bg-stone-50 border border-stone-200 rounded-xl p-4">
-          <div className="flex items-start gap-2">
-            <div className="flex-1 min-w-0 grid grid-cols-2 gap-3">
-              <Field label="Label (printed on the invoice) *" className="col-span-2">
-                <input
-                  type="text" value={row.label}
-                  onChange={e => patch(idx, { label: e.target.value })}
-                  placeholder="e.g. Refundable security deposit"
-                  className={inputCls}
-                />
-              </Field>
-              <SegmentGroup
-                label="This row"
-                options={[{ value: 'deduct', label: 'Subtract' }, { value: 'add', label: 'Add' }]}
-                value={row.direction}
-                onChange={v => patch(idx, { direction: v as InvoiceAdjustment['direction'] })}
-              />
-              <Field label="Amount (SGD) *">
-                <input
-                  type="number" inputMode="decimal" min={0.01} step={0.01} value={row.amount || ''}
-                  onChange={e => patch(idx, { amount: parseFloat(e.target.value) || 0 })}
-                  placeholder="0.00"
-                  className={inputCls}
-                />
-              </Field>
+      {form.extras.map((extra, idx) => {
+        const word = extra.direction === 'deduct' ? 'Discount' : 'Charge'
+        return (
+          <div key={idx} className="bg-stone-50 border border-stone-200 rounded-xl p-4">
+            <div className="flex items-start gap-2">
+              <div className="flex-1 min-w-0 grid grid-cols-[minmax(0,1fr)_6.5rem] gap-3">
+                <Field label={`${word} (printed on the invoice) *`}>
+                  <input
+                    type="text" value={extra.label}
+                    onChange={e => patchExtra(idx, { label: e.target.value })}
+                    placeholder={extra.direction === 'deduct' ? 'e.g. Returning client' : 'e.g. Rush fee'}
+                    className={inputCls}
+                  />
+                </Field>
+                <Field label="SGD *">
+                  <AmountInput
+                    ariaLabel={`${word} amount`}
+                    value={extra.amount}
+                    onChange={amount => patchExtra(idx, { amount })}
+                  />
+                </Field>
+              </div>
+              <button
+                type="button"
+                onClick={() => onChange({ ...form, extras: form.extras.filter((_, i) => i !== idx) })}
+                aria-label={`Remove ${word.toLowerCase()} ${extra.label}`.trim()}
+                className="text-stone-300 hover:text-red-400 transition-colors pt-2"
+              >
+                <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                </svg>
+              </button>
             </div>
-            <button
-              type="button" onClick={() => onChange(rows.filter((_, i) => i !== idx))}
-              aria-label={`Remove payment row ${idx + 1}`}
-              className="text-stone-300 hover:text-red-400 transition-colors pt-2"
-            >
-              <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-              </svg>
-            </button>
           </div>
-        </div>
-      ))}
+        )
+      })}
 
       <div className="flex flex-wrap gap-2">
-        {PAYMENT_STARTERS.map(s => (
+        {([['add', 'Add a charge'], ['deduct', 'Add a discount']] as const).map(([direction, text]) => (
           <button
-            key={s.label}
+            key={direction}
             type="button"
-            onClick={() => onChange([...rows, {
-              label: s.label,
-              direction: s.direction,
-              amount: s.startsAtHalf ? halfBalance(subtotal) : 0,
-            }])}
+            onClick={() => addExtra(direction)}
             className="text-xs text-rose-800 bg-white border border-rose-200 hover:bg-rose-50 rounded-lg
                        px-2.5 py-1.5 transition-colors"
           >
-            + {s.label}
+            + {text}
           </button>
         ))}
-        <button
-          type="button"
-          onClick={() => onChange([...rows, { label: '', direction: 'add', amount: 0 }])}
-          className="text-xs text-stone-600 bg-white border border-stone-200 hover:bg-stone-50 rounded-lg
-                     px-2.5 py-1.5 transition-colors"
-        >
-          + Other
-        </button>
       </div>
     </div>
   )
