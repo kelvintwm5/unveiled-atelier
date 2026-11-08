@@ -63,6 +63,15 @@ export interface Client {
   budget: number         // SGD
   stage: ClientStage
   notes: string
+  activityNotes: string  // free text on the profile; the dated log is ClientActivity
+}
+
+// Only open reminders reach the app. Marking one done takes it off every list.
+export interface ClientReminder {
+  id: string
+  clientId: string       // Client.id
+  remindOn: string       // YYYY-MM-DD
+  note: string
 }
 
 export interface ClientActivity {
@@ -77,6 +86,7 @@ export interface ClientActivity {
 // What the add forms produce: the database assigns the id.
 export type NewClient = Omit<Client, 'id'>
 export type NewActivity = Omit<ClientActivity, 'id'>
+export type NewReminder = Omit<ClientReminder, 'id'>
 
 // ── Invoice shapes ────────────────────────────────────────────────────────────
 

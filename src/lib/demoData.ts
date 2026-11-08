@@ -1,9 +1,12 @@
 // Sample data used in demo mode — no API call, no auth required.
 // Fictional, so portfolio visitors can explore the full UI without signing in.
 
+// The .js extension is required: api/ imports this file, and it runs as a Node ES
+// module, which doesn't guess extensions.
+import { addDays } from './dates.js'
 import type {
-  Transaction, IrasSummary, MonthlySummary, PnlTotals, Client, ClientActivity, Invoice, InvoiceClause,
-  InvoiceSettings,
+  Transaction, IrasSummary, MonthlySummary, PnlTotals, Client, ClientActivity, ClientReminder, Invoice,
+  InvoiceClause, InvoiceSettings,
 } from '../types'
 
 // Fixed ids, so React keys stay stable. Demo data never reaches the database.
@@ -82,6 +85,7 @@ export const DEMO_CLIENTS: Client[] = [
     budget: 450,
     stage: 'Fitting',
     notes: 'Cathedral length, French lace trim. 2nd fitting done, minor adjustments pending.',
+    activityNotes: 'Prefers WhatsApp in the evenings. Mother joins the final fitting.',
   },
   {
     id: DEMO_CLIENT_IDS['Priya Nair'],
@@ -93,6 +97,7 @@ export const DEMO_CLIENTS: Client[] = [
     budget: 180,
     stage: 'Consultation',
     notes: 'Traditional Indian-Chinese wedding. Likes the pearl edge rental.',
+    activityNotes: '',
   },
   {
     id: DEMO_CLIENT_IDS['Amanda Goh'],
@@ -104,6 +109,7 @@ export const DEMO_CLIENTS: Client[] = [
     budget: 600,
     stage: 'Confirmed',
     notes: 'Elbow length, silk organza. Deposit paid. Pickup 8 March.',
+    activityNotes: 'Sister will collect the veil on her behalf.',
   },
   {
     id: DEMO_CLIENT_IDS['Jessica Lim'],
@@ -115,6 +121,7 @@ export const DEMO_CLIENTS: Client[] = [
     budget: 150,
     stage: 'Inquiry',
     notes: 'Contacted via Instagram. Interested in floor-length options.',
+    activityNotes: '',
   },
   {
     id: DEMO_CLIENT_IDS['Sarah Wong'],
@@ -126,6 +133,7 @@ export const DEMO_CLIENTS: Client[] = [
     budget: 520,
     stage: 'Completed',
     notes: 'Fingertip length, applique flowers. Delivered and very happy.',
+    activityNotes: '',
   },
   {
     id: DEMO_CLIENT_IDS['Mei Ling Chen'],
@@ -137,8 +145,34 @@ export const DEMO_CLIENTS: Client[] = [
     budget: 300,
     stage: 'Inquiry',
     notes: 'Enquired about custom-made rental concept. Pricing TBD.',
+    activityNotes: '',
   },
 ]
+
+// A function of today, so a demo opened on any date has something due. The other
+// demo dates are fixed, but a reminder only makes sense relative to now.
+export function demoReminders(today: string): ClientReminder[] {
+  return [
+    {
+      id: '00000000-0000-4000-a000-000000000001',
+      clientId: DEMO_CLIENT_IDS['Rachel Tan'],
+      remindOn: addDays(today, -2),
+      note: 'Confirm the lace trim adjustment is finished',
+    },
+    {
+      id: '00000000-0000-4000-a000-000000000002',
+      clientId: DEMO_CLIENT_IDS['Priya Nair'],
+      remindOn: today,
+      note: 'Send the pearl edge rental photos',
+    },
+    {
+      id: '00000000-0000-4000-a000-000000000003',
+      clientId: DEMO_CLIENT_IDS['Mei Ling Chen'],
+      remindOn: addDays(today, 5),
+      note: 'Share pricing for the custom rental',
+    },
+  ]
+}
 
 export const DEMO_ACTIVITIES: ClientActivity[] = [
   {
