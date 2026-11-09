@@ -1,9 +1,10 @@
 import { describe, expect, it } from 'vitest'
 import {
-  clientBookings, clientInvoiceTotals, depositsAwaitingFinal, draftFinalFor, finalFromDeposit, openDepositsFor,
+  clientBookings, clientInvoiceTotals, depositsAwaitingFinal, draftFinalFor, finalFromDeposit, heldDeposits,
+  openDepositsFor, paymentSplit, securityHeld, securityText,
 } from './invoiceBookings'
 import { amountPayable, balanceLeft, buildTotalsRows, calcSubtotal } from './invoiceTotals'
-import type { Client, Invoice, InvoiceAdjustment, InvoiceDraft } from '../types'
+import type { Client, Invoice, InvoiceAdjustment, InvoiceDraft, InvoicePayment } from '../types'
 
 const BALANCE = 'Balance due later'
 const SECURITY = 'Refundable security deposit'
@@ -26,6 +27,7 @@ function invoice(patch: Partial<Invoice>): Invoice {
     amountPayable: totals ? amountPayable(totals) : null,
     totals, business: null, pdfPath: '', voidedAt: '', voidReason: '',
     createdAt: `2026-11-01T00:00:${String(n % 60).padStart(2, '0')}Z`,
+    payment: null,
     ...patch,
     lines,
     adjustments,
@@ -46,6 +48,11 @@ const blank: InvoiceDraft = {
 }
 
 const payableOf = (d: InvoiceDraft) => amountPayable(buildTotalsRows(calcSubtotal(d.lines), d.adjustments))
+
+const paid = (patch: Partial<InvoicePayment> = {}): InvoicePayment => ({
+  paidOn: '2026-11-02', method: 'PayNow', priceAmount: 200, securityAmount: 0, securitySettledOn: '',
+  securityKept: 0, securityNote: '', bookingClosedOn: '', bookingClosedReason: '', ...patch,
+})
 
 describe('balanceLeft', () => {
   it('is the balance row on a deposit', () => {
@@ -82,6 +89,15 @@ describe('depositsAwaitingFinal', () => {
   it('offers it again if that final is voided', () => {
     const d = deposit()
     expect(depositsAwaitingFinal([d, invoice({ kind: 'final', depositInvoiceId: d.id, status: 'void' })])).toEqual([d])
+  })
+
+  it('does not offer a closed booking', () => {
+    expect(depositsAwaitingFinal([deposit({ payment: paid({ bookingClosedOn: '2026-11-03' }) })])).toEqual([])
+  })
+
+  it('still offers a paid deposit that is not closed', () => {
+    const d = deposit({ payment: paid() })
+    expect(depositsAwaitingFinal([d])).toEqual([d])
   })
 
   it('does not offer a voided deposit, only its replacement', () => {
@@ -207,22 +223,101 @@ describe('clientBookings', () => {
   })
 })
 
+describe('paymentSplit', () => {
+  it('is all price with no security deposit', () => {
+    expect(paymentSplit(invoice({}))).toEqual({ price: 500, security: 0 })
+  })
+
+  it('separates a security deposit from the price', () => {
+    const d = deposit({ adjustments: [row(BALANCE, 'deduct', 300), row(SECURITY, 'add', 50)] })
+    expect(paymentSplit(d)).toEqual({ price: 200, security: 50 })
+  })
+
+  it('splits cents exactly', () => {
+    const inv = invoice({
+      lines: [{ title: 'Veil', description: '', quantity: 1, unitAmount: 0.3 }],
+      adjustments: [row(SECURITY, 'add', 0.1)],
+    })
+    expect(paymentSplit(inv)).toEqual({ price: 0.3, security: 0.1 })
+  })
+})
+
+describe('security deposits', () => {
+  it('is held until it is settled', () => {
+    expect(securityHeld(paid({ securityAmount: 120 }))).toBe(120)
+    expect(securityHeld(paid({ securityAmount: 120, securitySettledOn: '2026-11-05' }))).toBe(0)
+  })
+
+  it('is nothing with no payment or no deposit', () => {
+    expect(securityHeld(null)).toBe(0)
+    expect(securityHeld(paid())).toBe(0)
+  })
+
+  it('says what became of it', () => {
+    const on = { securityAmount: 120, securitySettledOn: '2026-11-05' }
+    expect(securityText(paid())).toBeNull()
+    expect(securityText(paid({ securityAmount: 120 }))).toContain('$120.00 held')
+    expect(securityText(paid({ ...on, securityKept: 0 }))).toContain('$120.00 returned')
+    expect(securityText(paid({ ...on, securityKept: 120 }))).toContain('$120.00 kept')
+    expect(securityText(paid({ ...on, securityKept: 40 }))).toContain('$40.00 kept, $80.00 returned')
+  })
+
+  it('totals what is held across clients', () => {
+    expect(heldDeposits([
+      invoice({ clientId: 'c1', payment: paid({ securityAmount: 100 }) }),
+      invoice({ clientId: 'c1', payment: paid({ securityAmount: 20 }) }),
+      invoice({ clientId: 'c2', payment: paid({ securityAmount: 50 }) }),
+      invoice({ clientId: 'c3', payment: paid({ securityAmount: 90, securitySettledOn: '2026-11-05' }) }),
+      invoice({ clientId: 'c4' }),
+    ])).toEqual({ total: 170, clients: 2 })
+  })
+
+  it('counts invoices with no client separately', () => {
+    expect(heldDeposits([
+      invoice({ clientId: '', payment: paid({ securityAmount: 10 }) }),
+      invoice({ clientId: '', payment: paid({ securityAmount: 10 }) }),
+    ]).clients).toBe(2)
+  })
+})
+
 describe('clientInvoiceTotals', () => {
-  it('adds what was billed and what is still to bill', () => {
-    expect(clientInvoiceTotals([deposit(), invoice({})], 'c1')).toEqual({ invoiced: 700, stillToInvoice: 300 })
+  it('counts unpaid invoices and balances not yet invoiced as to collect', () => {
+    // $200 deposit and $500 full payment, both unpaid, plus a $300 balance.
+    expect(clientInvoiceTotals([deposit(), invoice({})], 'c1')).toEqual({
+      invoiced: 700, received: 0, toCollect: 1000, securityHeld: 0,
+    })
+  })
+
+  it('moves a paid invoice from to collect to received', () => {
+    expect(clientInvoiceTotals([deposit({ payment: paid() })], 'c1')).toEqual({
+      invoiced: 200, received: 200, toCollect: 300, securityHeld: 0,
+    })
+  })
+
+  it('counts a security deposit as received and shows it as held', () => {
+    const d = deposit({
+      adjustments: [row(BALANCE, 'deduct', 300), row(SECURITY, 'add', 50)],
+      payment: paid({ securityAmount: 50 }),
+    })
+    expect(clientInvoiceTotals([d], 'c1')).toEqual({ invoiced: 250, received: 250, toCollect: 300, securityHeld: 50 })
   })
 
   it('leaves out void invoices and drafts', () => {
     expect(clientInvoiceTotals([
       deposit({ status: 'void' }),
       invoice({ status: 'draft' }),
-    ], 'c1')).toEqual({ invoiced: 0, stillToInvoice: 0 })
+    ], 'c1')).toEqual({ invoiced: 0, received: 0, toCollect: 0, securityHeld: 0 })
   })
 
   it('stops counting the balance once the final is issued', () => {
-    const d = deposit()
+    const d = deposit({ payment: paid() })
     const f = invoice({ kind: 'final', depositInvoiceId: d.id, adjustments: [row('Less: deposit paid', 'deduct', 200)] })
-    expect(clientInvoiceTotals([d, f], 'c1')).toEqual({ invoiced: 500, stillToInvoice: 0 })
+    expect(clientInvoiceTotals([d, f], 'c1')).toEqual({ invoiced: 500, received: 200, toCollect: 300, securityHeld: 0 })
+  })
+
+  it('collects nothing more on a closed booking', () => {
+    const d = deposit({ payment: paid({ bookingClosedOn: '2026-11-03' }) })
+    expect(clientInvoiceTotals([d], 'c1').toCollect).toBe(0)
   })
 
   it('adds cents exactly', () => {

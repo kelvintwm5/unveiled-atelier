@@ -153,6 +153,14 @@ npm test         # Vitest, for the pure domain modules in src/lib
     as a positive figure below the amount payable (`memo` on the totals row). A
     negative balance would read like money taken off the price. "Less: deposit
     paid" on a final stays negative, because that money has been received.
+- **Payments:** an invoice is paid once, in full, through "Mark as paid". Only
+  `record_invoice_payment()` and its siblings in 0011 write `invoice_payments`.
+  - The price becomes an Income row on the payment date. A transaction linked to an
+    invoice (`source` set) can't be deleted, and its amount, type and date can't be
+    edited. Notes and attachments can.
+  - A refundable security deposit is held, and never reaches Transactions when it's
+    returned. An amount kept for damage becomes Income on the day it's kept.
+  - A paid deposit whose client cancels is closed with `close_booking()`, not voided.
 - **Invoice lifecycle:** `draft → issued → void`.
   - Draft PDFs carry a "DRAFT" watermark and no number.
   - The issued PDF is uploaded to Supabase Storage. It is the record of what the
@@ -235,14 +243,23 @@ Ask before you:
 
 ## Decisions
 
+- **2026-11-09: income is recorded when an invoice is paid, not when it's issued.**
+  - Why: `iras_summary` counts every Income row as revenue, so an unpaid invoice would
+    overstate it. Esther's rules, confirmed through Kelvin.
+  - How: `invoice_payments` (0011) holds one row per invoice, because issued invoices
+    are frozen and clients don't part-pay. Database functions write the payment and
+    its Income row together, so the two can't disagree.
+  - A paid invoice can't be voided or reissued until the payment is undone. Carrying a
+    payment over to a corrected amount would show money she never received.
+  - There's no refund feature, because paid deposits are non-refundable. A cancelled
+    booking is closed and keeps its income. The rare refund is undo payment plus void.
+
 - **2026-11-09: a client's invoices are read live and matched by deposit.**
   - Why: copying invoice data onto the client would drift, and voiding an invoice
     would need clean-up in a second place. The profile reads `invoices` through
     `client_id` (`src/lib/invoiceBookings.ts`).
   - A final is always tied to one deposit invoice, and balances are never added up
     across a client. A client with two bookings owes each one separately.
-  - The profile shows what was billed, not what was paid. The app doesn't record
-    payments yet, so a final assumes its deposit was paid.
   - An issued invoice's `client_id` is frozen, so the editor prompts to link a
     client before issuing.
 

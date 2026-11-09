@@ -15,6 +15,7 @@ export interface Transaction {
   referenceNo: string      // receipt or invoice number
   notes: string
   attachment?: TransactionAttachment
+  fromInvoice?: boolean    // created by a payment: amount, type and date change on the invoice
 }
 
 // One uploaded file, usually a receipt. path is the object's name in Storage;
@@ -25,7 +26,7 @@ export interface TransactionAttachment {
 }
 
 // The file travels separately, because it has to be uploaded before the row is saved.
-export type NewTransaction = Omit<Transaction, 'id' | 'attachment'>
+export type NewTransaction = Omit<Transaction, 'id' | 'attachment' | 'fromInvoice'>
 
 // The four lines of the IRAS Form B/B1 statement for one calendar year.
 export interface IrasSummary {
@@ -183,6 +184,21 @@ export interface Invoice extends InvoiceDraft {
   voidedAt: string           // ISO timestamp, '' unless void
   voidReason: string
   createdAt: string
+  payment: InvoicePayment | null   // null until it's marked paid
+}
+
+// That an invoice was paid, and what became of any security deposit on it. Kept
+// apart from the invoice's own fields because an issued invoice is frozen.
+export interface InvoicePayment {
+  paidOn: string             // YYYY-MM-DD
+  method: string
+  priceAmount: number        // SGD; what became income
+  securityAmount: number     // SGD; held for the client, 0 if none
+  securitySettledOn: string  // YYYY-MM-DD, '' while held
+  securityKept: number       // SGD kept for damage; the rest went back to the client
+  securityNote: string
+  bookingClosedOn: string    // YYYY-MM-DD, '' unless the client cancelled
+  bookingClosedReason: string
 }
 
 // Another screen asking the Invoices screen to open on something. There's no
