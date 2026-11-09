@@ -10,7 +10,7 @@
 // come from invoiceTotals.ts, and the database checks that they add up.
 
 import { getSupabase } from './supabase'
-import { adjustmentsForReissue, amountPayable, buildTotalsRows, calcSubtotal } from './invoiceTotals'
+import { adjustmentsForReissue, amountPayable, buildTotalsRows, calcSubtotal, depositCollected } from './invoiceTotals'
 import { DEMO_INVOICES, DEMO_INVOICE_SETTINGS, DEMO_SERVICES } from './demoData'
 import { renderFromIssued } from './invoiceRender'
 import { renderInvoicePdf } from './invoicePdf'
@@ -280,7 +280,7 @@ function checkAmounts(lines: InvoiceLine[], adjustments: InvoiceAdjustment[]): v
   }
   for (const [i, a] of adjustments.entries()) {
     if (!Number.isFinite(a.amount) || a.amount < 0) {
-      throw new Error(`Payment row ${i + 1}: the amount can't be negative. Use Subtract instead.`)
+      throw new Error(`Payment row ${i + 1}: the amount can't be negative.`)
     }
     if (Math.round(a.amount * 100) / 100 !== a.amount) {
       throw new Error(`Payment row ${i + 1}: amounts can have at most 2 decimal places.`)
@@ -299,7 +299,7 @@ export function issueProblem(d: InvoiceDraft): string | null {
     return 'Every line item needs a title and an amount above zero.'
   }
   if (d.adjustments.some(a => !a.label.trim() || !(a.amount > 0))) {
-    return 'Every payment row needs a label and an amount above zero.'
+    return 'Every charge or discount needs a description and an amount above zero.'
   }
   if (amountPayable(draftTotals(d)) <= 0) return 'The amount payable must be above zero.'
   return null
@@ -497,7 +497,8 @@ export function toDraft(inv: Invoice): InvoiceDraft {
 /**
  * A final invoice drafted from an issued deposit: same client, template, dates
  * and lines, linked to the deposit by id. Starts with the deposit it actually
- * billed taken off. Keeps the draft's own terms and note.
+ * collected taken off, not counting any refundable security deposit on it.
+ * Keeps the draft's own terms and note.
  */
 export function finalFromDeposit(current: InvoiceDraft, deposit: Invoice): InvoiceDraft {
   return {
@@ -516,7 +517,7 @@ export function finalFromDeposit(current: InvoiceDraft, deposit: Invoice): Invoi
     adjustments: [{
       label:     `Less: deposit paid (${deposit.invoiceNo})`,
       direction: 'deduct',
-      amount:    deposit.amountPayable ?? 0,
+      amount:    depositCollected(deposit),
     }],
   }
 }

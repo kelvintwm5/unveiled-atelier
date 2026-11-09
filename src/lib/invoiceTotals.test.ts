@@ -1,5 +1,8 @@
 import { describe, expect, it } from 'vitest'
-import { adjustmentsForReissue, amountPayable, buildTotalsRows, calcSubtotal, halfBalance, lineTotal } from './invoiceTotals'
+import {
+  adjustmentsForReissue, amountPayable, buildTotalsRows, calcSubtotal, depositCollected, lineTotal,
+  paymentProblem, priceAfterExtras, readPayment, writePayment, type PaymentForm,
+} from './invoiceTotals'
 import type { InvoiceAdjustment } from '../types'
 
 describe('calcSubtotal', () => {
@@ -78,10 +81,165 @@ describe('buildTotalsRows', () => {
   })
 })
 
-describe('halfBalance', () => {
-  it('is half, with an odd cent going to the deposit', () => {
-    expect(halfBalance(1000)).toBe(500)
-    expect(halfBalance(100.01)).toBe(50)
+describe('the payment form', () => {
+  const form = (patch: Partial<PaymentForm> = {}): PaymentForm => ({
+    depositAmount: 0, depositLabel: '', securityDeposit: 0, extras: [], ...patch,
+  })
+  const payable = (subtotal: number, rows: InvoiceAdjustment[]) => amountPayable(buildTotalsRows(subtotal, rows))
+  const charge = { label: 'Rush fee', direction: 'add', amount: 40 } as const
+  const discount = { label: 'Returning client', direction: 'deduct', amount: 30 } as const
+  const security = { label: 'Refundable security deposit', direction: 'add', amount: 50 } as const
+
+  describe('writePayment', () => {
+    it('adds no rows to a plain full payment', () => {
+      expect(writePayment('full', 300, form())).toEqual([])
+    })
+
+    it('ignores a deposit amount on a full payment', () => {
+      expect(writePayment('full', 300, form({ depositAmount: 100 }))).toEqual([])
+    })
+
+    it('holds back the balance so a deposit invoice collects the deposit', () => {
+      const rows = writePayment('deposit', 300, form({ depositAmount: 100 }))
+      expect(rows).toEqual([{ label: 'Balance due later', direction: 'deduct', amount: 200 }])
+      expect(payable(300, rows)).toBe(100)
+    })
+
+    it('moves the balance, not the deposit, when the price changes', () => {
+      expect(payable(450, writePayment('deposit', 450, form({ depositAmount: 100 })))).toBe(100)
+    })
+
+    it('collects exactly the deposit even with charges and discounts', () => {
+      const rows = writePayment('deposit', 300, form({ depositAmount: 100, extras: [charge, discount] }))
+      expect(rows[rows.length - 1]).toEqual({ label: 'Balance due later', direction: 'deduct', amount: 210 })
+      expect(payable(300, rows)).toBe(100)
+    })
+
+    it('leaves out the balance when the deposit is the whole price', () => {
+      expect(writePayment('deposit', 300, form({ depositAmount: 300 }))).toEqual([])
+    })
+
+    it('collects nothing yet while the deposit is empty', () => {
+      expect(payable(300, writePayment('deposit', 300, form()))).toBe(0)
+    })
+
+    it('takes the deposit paid off a final, keeping a label that names the invoice', () => {
+      const rows = writePayment('final', 300, form({ depositAmount: 100, depositLabel: 'Less: deposit paid (UA-2026-1825)' }))
+      expect(rows).toEqual([{ label: 'Less: deposit paid (UA-2026-1825)', direction: 'deduct', amount: 100 }])
+    })
+
+    it('uses the plain label on a final with no linked deposit', () => {
+      expect(writePayment('final', 300, form({ depositAmount: 100 }))[0].label).toBe('Less: deposit paid')
+    })
+
+    it('adds a security deposit on top, outside the balance', () => {
+      const rows = writePayment('deposit', 300, form({ depositAmount: 100, securityDeposit: 50 }))
+      expect(rows).toEqual([
+        { label: 'Balance due later', direction: 'deduct', amount: 200 },
+        security,
+      ])
+      expect(payable(300, rows)).toBe(150)
+    })
+
+    it('stays exact in cents', () => {
+      expect(writePayment('deposit', 100.3, form({ depositAmount: 33.1 }))[0].amount).toBe(67.2)
+    })
+
+    it('keeps a deposit bigger than a price still being typed', () => {
+      expect(writePayment('deposit', 5, form({ depositAmount: 100 }))).toEqual([])
+      expect(writePayment('deposit', 500, form({ depositAmount: 100 }))[0].amount).toBe(400)
+    })
+  })
+
+  describe('readPayment', () => {
+    it('works the deposit back from the balance', () => {
+      expect(readPayment('deposit', 300, [deduct('Balance due later', 200)]).depositAmount).toBe(100)
+    })
+
+    it('reads a deposit invoice with no balance as collecting the whole price', () => {
+      expect(readPayment('deposit', 300, []).depositAmount).toBe(300)
+    })
+
+    it('reads a final deposit row and keeps its label', () => {
+      const read = readPayment('final', 300, [deduct('Less: deposit paid (UA-2026-1825)', 100)])
+      expect(read).toEqual(form({ depositAmount: 100, depositLabel: 'Less: deposit paid (UA-2026-1825)' }))
+    })
+
+    it('finds the security deposit whatever its case', () => {
+      const read = readPayment('full', 300, [{ label: 'refundable Security Deposit ', direction: 'add', amount: 50 }])
+      expect(read.securityDeposit).toBe(50)
+      expect(read.extras).toEqual([])
+    })
+
+    it('keeps rows it does not recognise as charges and discounts', () => {
+      expect(readPayment('full', 300, [charge, discount]).extras).toEqual([charge, discount])
+    })
+
+    it('treats a balance row on a full payment as a discount, so the amount holds', () => {
+      const rows = [deduct('Balance due later', 200)]
+      expect(readPayment('full', 300, rows).extras).toEqual(rows)
+    })
+
+    it('only claims the first matching row', () => {
+      const rows = [deduct('Balance due later', 200), deduct('Balance due later', 10)]
+      expect(readPayment('deposit', 300, rows).extras).toEqual([rows[1]])
+    })
+  })
+
+  it('reads and writes back to the same amount payable', () => {
+    const cases: [Parameters<typeof readPayment>[0], number, InvoiceAdjustment[]][] = [
+      ['full', 300, []],
+      ['full', 300, [security, charge]],
+      ['deposit', 300, [deduct('Balance due later', 200), security]],
+      ['deposit', 300, [discount, deduct('Balance due later', 170)]],
+      ['deposit', 300, [deduct('Paid at collection', 150)]],
+      ['final', 300, [deduct('Less: deposit paid (UA-1)', 100), security, charge]],
+    ]
+    for (const [kind, subtotal, rows] of cases) {
+      const after = writePayment(kind, subtotal, readPayment(kind, subtotal, rows))
+      expect(payable(subtotal, after)).toBe(payable(subtotal, rows))
+    }
+  })
+
+  describe('paymentProblem', () => {
+    it('never stops a full payment', () => {
+      expect(paymentProblem('full', 300, form())).toBeNull()
+    })
+
+    it('needs a deposit amount on a deposit invoice', () => {
+      expect(paymentProblem('deposit', 300, form())).toMatch(/enter the deposit/i)
+    })
+
+    it('accepts a deposit up to the whole price', () => {
+      expect(paymentProblem('deposit', 300, form({ depositAmount: 300 }))).toBeNull()
+    })
+
+    it('refuses a deposit above the price after discounts', () => {
+      expect(paymentProblem('deposit', 300, form({ depositAmount: 280, extras: [discount] }))).toMatch(/more than/)
+      expect(paymentProblem('final', 300, form({ depositAmount: 301 }))).toMatch(/more than/)
+    })
+
+    it('lets a final have no deposit', () => {
+      expect(paymentProblem('final', 300, form())).toBeNull()
+    })
+  })
+
+  it('counts charges and discounts in the price', () => {
+    expect(priceAfterExtras(300, [charge, discount])).toBe(310)
+  })
+
+  describe('depositCollected', () => {
+    it('is what the deposit invoice billed', () => {
+      expect(depositCollected({ amountPayable: 100, adjustments: [] })).toBe(100)
+    })
+
+    it('leaves out a refundable security deposit', () => {
+      expect(depositCollected({ amountPayable: 150, adjustments: [security] })).toBe(100)
+    })
+
+    it('is zero for an invoice with no amount', () => {
+      expect(depositCollected({ amountPayable: null, adjustments: [] })).toBe(0)
+    })
   })
 })
 
