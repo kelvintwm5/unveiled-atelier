@@ -36,3 +36,21 @@ const displayDate = new Intl.DateTimeFormat('en-GB', {
 export function formatDate(date: string): string {
   return date ? displayDate.format(new Date(`${date}T00:00:00Z`)) : ''
 }
+
+const dayMonth = new Intl.DateTimeFormat('en-GB', { timeZone: 'UTC', day: '2-digit', month: 'short' })
+const monthYear = new Intl.DateTimeFormat('en-GB', { timeZone: 'UTC', month: 'long', year: 'numeric' })
+
+/** '2026-04-10' → '10 Apr', for a list that already shows the year. '' stays ''. */
+export function formatDayMonth(date: string): string {
+  return date ? dayMonth.format(new Date(`${date}T00:00:00Z`)) : ''
+}
+
+/** '2026-04-10' → 'April 2026'. */
+export function formatMonth(date: string): string {
+  return monthYear.format(new Date(`${date}T00:00:00Z`))
+}
+
+/** Whole days from one YYYY-MM-DD date to another. In UTC for the same reason as addDays. */
+export function daysBetween(from: string, to: string): number {
+  return Math.round((Date.parse(`${to}T00:00:00Z`) - Date.parse(`${from}T00:00:00Z`)) / 86_400_000)
+}
