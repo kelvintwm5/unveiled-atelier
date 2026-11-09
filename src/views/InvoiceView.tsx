@@ -4,7 +4,7 @@ import {
   startReplacement, blankDraft, toDraft, defaultTerms, issueProblem,
   draftTotals, replacementOf, payableOf, storeIssuedPdf, getIssuedPdf, listServices,
 } from '../lib/invoices'
-import { depositsAwaitingFinal, draftFinalFor, finalFromDeposit, openDepositsFor } from '../lib/invoiceBookings'
+import { depositsAwaitingFinal, draftFinalFor, finalFromDeposit, heldDeposits, openDepositsFor } from '../lib/invoiceBookings'
 import {
   balanceLeft, lineTotal, calcSubtotal, paymentProblem, priceAfterExtras, readPayment, splitTotals, writePayment,
   type PaymentForm,
@@ -18,6 +18,7 @@ import InvoiceSettingsView from './InvoiceSettingsView'
 import FormattedText from '../components/FormattedText'
 import TermsEditor from '../components/TermsEditor'
 import InvoiceStatusBadge from '../components/InvoiceStatusBadge'
+import InvoicePaymentPanel from '../components/InvoicePaymentPanel'
 import type {
   Client, Invoice, InvoiceAdjustment, InvoiceDraft, InvoiceIntent, InvoiceKind, InvoiceLine, InvoiceService,
   InvoiceSettings, InvoiceTemplate, TotalsRow,
@@ -194,6 +195,7 @@ function InvoiceList({ mode, invoices, error, onNew, onOpen, onSettings }: {
   onOpen: (inv: Invoice) => void
   onSettings: () => void
 }) {
+  const held = heldDeposits(invoices)
   return (
     <div className="h-full flex flex-col">
       <Header
@@ -229,6 +231,11 @@ function InvoiceList({ mode, invoices, error, onNew, onOpen, onSettings }: {
       />
       <div className="flex-1 overflow-y-auto px-4 py-5 md:px-8 md:py-6">
         {error && <p className="text-red-600 text-sm mb-4">{error}</p>}
+        {held.total > 0 && (
+          <p className="max-w-2xl text-sm bg-stone-100 border border-stone-200 text-stone-700 rounded-lg px-3 py-2 mb-4">
+            Holding {formatSGD(held.total)} in security deposits across {held.clients} {held.clients === 1 ? 'client' : 'clients'}.
+          </p>
+        )}
         {invoices.length === 0 ? (
           <p className="text-sm text-stone-400">No invoices yet. Tap New to start a draft.</p>
         ) : (
@@ -250,7 +257,7 @@ function InvoiceList({ mode, invoices, error, onNew, onOpen, onSettings }: {
                         ].join(' ')}>
                           {inv.invoiceNo || 'Draft'}
                         </span>
-                        <InvoiceStatusBadge status={inv.status} />
+                        <InvoiceStatusBadge status={inv.status} paid={inv.payment !== null} />
                       </div>
                       <p className="text-sm text-stone-600 truncate">{inv.clientName || 'No client yet'}</p>
                       <p className="text-xs text-stone-400">
@@ -328,6 +335,7 @@ function DraftEditor({
     [invoices, draft.clientId, draft.depositInvoiceId, draft.replacesInvoiceId],
   )
   const otherDraftFinal = draft.depositInvoiceId ? draftFinalFor(invoices, draft.depositInvoiceId, id) : undefined
+  const unpaidDeposit = invoices.find(i => i.id === draft.depositInvoiceId && !i.payment)
   const hasServices = edited.lines.some(l => l.title.trim() !== '' || l.unitAmount > 0)
   // Someone already in the tracker whose name she typed instead of picking.
   const typedName = draft.clientName.trim().toLowerCase()
@@ -585,6 +593,11 @@ function DraftEditor({
                     <p className="text-sm bg-rose-50 border border-rose-200 text-rose-900 rounded-lg px-3 py-2">
                       This deposit already has a final in draft, and only one can be issued.{' '}
                       <LinkButton onClick={() => onOpen(otherDraftFinal)}>Open that draft</LinkButton>
+                    </p>
+                  )}
+                  {unpaidDeposit && (
+                    <p className="text-sm bg-amber-50 border border-amber-200 text-amber-900 rounded-lg px-3 py-2">
+                      {unpaidDeposit.invoiceNo} isn't marked paid yet. Check the deposit has arrived before taking it off this final.
                     </p>
                   )}
                   {draft.depositInvoiceId ? (
@@ -918,7 +931,7 @@ function IssuedInvoice({ mode, invoice, invoices, notice, onBack, onOpen, onChan
         title={invoice.invoiceNo}
         subtitle={`${TEMPLATE_LABEL[invoice.template]} · ${KIND_LABEL[invoice.kind]} · issued ${formatDate(invoice.issuedOn)}`}
         onBack={onBack}
-        action={<InvoiceStatusBadge status={invoice.status} />}
+        action={<InvoiceStatusBadge status={invoice.status} paid={invoice.payment !== null} />}
       />
 
       <div className="flex-1 overflow-y-auto px-4 py-5 md:px-8 md:py-6">
@@ -972,6 +985,12 @@ function IssuedInvoice({ mode, invoice, invoices, notice, onBack, onOpen, onChan
             </div>
           )}
 
+          {invoice.status === 'issued' && (
+            <Section title="Payment">
+              <InvoicePaymentPanel mode={mode} invoice={invoice} onChanged={onChanged} />
+            </Section>
+          )}
+
           <Section title="Client">
             <div className="text-sm text-stone-700 space-y-0.5">
               <p className="font-medium">{invoice.clientName}</p>
@@ -1013,7 +1032,12 @@ function IssuedInvoice({ mode, invoice, invoices, notice, onBack, onOpen, onChan
 
           {error && <p className="text-red-600 text-sm">{error}</p>}
 
-          {invoice.status === 'issued' && (
+          {invoice.status === 'issued' && invoice.payment && (
+            <p className="text-sm bg-stone-100 border border-stone-200 text-stone-700 rounded-lg px-3 py-2">
+              This invoice is marked paid. To void or reissue it, undo the payment first, then mark the new invoice paid.
+            </p>
+          )}
+          {invoice.status === 'issued' && !invoice.payment && (
             voiding ? (
               <div className="bg-white border border-stone-200 rounded-xl p-4 space-y-3">
                 <Field label="Reason for voiding (optional)">
@@ -1067,7 +1091,7 @@ function IssuedInvoice({ mode, invoice, invoices, notice, onBack, onOpen, onChan
               </div>
             )
           )}
-          {invoice.status === 'issued' && !voiding && (
+          {invoice.status === 'issued' && !invoice.payment && !voiding && (
             <p className="text-xs text-stone-400">
               Void & reissue copies this invoice into a new draft. This one stays valid until the
               replacement is issued.

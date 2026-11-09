@@ -14,8 +14,9 @@ import { adjustmentsForReissue, amountPayable, buildTotalsRows, calcSubtotal } f
 import { DEMO_INVOICES, DEMO_INVOICE_SETTINGS, DEMO_SERVICES } from './demoData'
 import { renderFromIssued } from './invoiceRender'
 import { renderInvoicePdf } from './invoicePdf'
+import { removeAttachmentFile } from './transactions'
 import type {
-  BusinessDetails, Invoice, InvoiceAdjustment, InvoiceDraft, InvoiceKind, InvoiceLine,
+  BusinessDetails, Invoice, InvoiceAdjustment, InvoiceDraft, InvoiceKind, InvoiceLine, InvoicePayment,
   InvoiceService, InvoiceSettings, InvoiceStatus, InvoiceTemplate, NewInvoiceService,
   TotalsRow,
 } from '../types'
@@ -23,6 +24,7 @@ import type {
 type Mode = 'demo' | 'app'
 
 const DEMO_NO_ISSUE = 'The demo can’t issue or void invoices. Sign in to issue real ones.'
+const DEMO_NO_PAYMENTS = 'The demo can’t record payments. Sign in to record real ones.'
 
 // ── Demo store ─────────────────────────────────────────────────────────────────
 
@@ -44,6 +46,7 @@ function copyInvoice(inv: Invoice): Invoice {
     adjustments: inv.adjustments.map(a => ({ ...a })),
     totals: inv.totals?.map(r => ({ ...r })) ?? null,
     business: inv.business ? { ...inv.business } : null,
+    payment: inv.payment ? { ...inv.payment } : null,
   }
 }
 
@@ -59,6 +62,18 @@ interface LineRow {
   quantity: number
   unit_amount: Numeric
   line_type: 'service' | 'add' | 'deduct'
+}
+
+interface PaymentRow {
+  paid_on: string
+  payment_method: string | null
+  price_amount: Numeric
+  security_amount: Numeric
+  security_settled_on: string | null
+  security_kept: Numeric | null
+  security_note: string | null
+  booking_closed_on: string | null
+  booking_closed_reason: string | null
 }
 
 interface InvoiceRow {
@@ -88,6 +103,9 @@ interface InvoiceRow {
   void_reason: string | null
   created_at: string
   invoice_line_items: LineRow[]
+  // One row at most, because invoice_id is unique there. PostgREST sends that as an
+  // object, but the array form is handled too rather than trusted away.
+  invoice_payments: PaymentRow | PaymentRow[] | null
 }
 
 interface SettingsRow {
@@ -108,7 +126,11 @@ const INVOICE_COLUMNS = `
   pws_date, wedding_date, client_note, terms, deposit_invoice_id, legacy_deposit_no,
   replaces_invoice_id, invoice_no, issued_on, subtotal, amount_payable, totals,
   business_snapshot, pdf_path, voided_at, void_reason, created_at,
-  invoice_line_items ( position, title, description, quantity, unit_amount, line_type )`
+  invoice_line_items ( position, title, description, quantity, unit_amount, line_type ),
+  invoice_payments (
+    paid_on, payment_method, price_amount, security_amount, security_settled_on,
+    security_kept, security_note, booking_closed_on, booking_closed_reason
+  )`
 
 const SETTINGS_COLUMNS = `
   business_name, address, email, phone, paynow, bank_name, bank_account_name,
@@ -142,6 +164,22 @@ function toBusiness(v: unknown): BusinessDetails | null {
     bankName:        text('bankName'),
     bankAccountName: text('bankAccountName'),
     bankAccountNo:   text('bankAccountNo'),
+  }
+}
+
+function toPayment(v: InvoiceRow['invoice_payments']): InvoicePayment | null {
+  const r = Array.isArray(v) ? v[0] : v
+  if (!r) return null
+  return {
+    paidOn:              r.paid_on,
+    method:              r.payment_method ?? '',
+    priceAmount:         Number(r.price_amount),
+    securityAmount:      Number(r.security_amount),
+    securitySettledOn:   r.security_settled_on ?? '',
+    securityKept:        Number(r.security_kept ?? 0),
+    securityNote:        r.security_note ?? '',
+    bookingClosedOn:     r.booking_closed_on ?? '',
+    bookingClosedReason: r.booking_closed_reason ?? '',
   }
 }
 
@@ -186,6 +224,7 @@ function toInvoice(r: InvoiceRow): Invoice {
     voidedAt:      r.voided_at ?? '',
     voidReason:    r.void_reason ?? '',
     createdAt:     r.created_at,
+    payment:       toPayment(r.invoice_payments),
   }
 }
 
@@ -508,7 +547,7 @@ export async function saveDraft(mode: Mode, id: string | null, draft: InvoiceDra
       ...(existing ?? {
         id: crypto.randomUUID(), status: 'draft', invoiceNo: '', issuedOn: '', subtotal: null,
         amountPayable: null, totals: null, business: null, pdfPath: '', voidedAt: '', voidReason: '',
-        createdAt: new Date().toISOString(),
+        createdAt: new Date().toISOString(), payment: null,
       }),
       ...draft,
       lines: draft.lines.map(l => ({ ...l })),
@@ -632,6 +671,58 @@ export async function getIssuedPdf(mode: Mode, inv: Invoice, invoices: Invoice[]
     return data.signedUrl
   }
   return renderInvoicePdf(renderFromIssued(inv, invoices))
+}
+
+// ── Payments ──────────────────────────────────────────────────────────────────
+//
+// Each call is one database function from 0011, which does the sums and writes the
+// payment and its Income row together. Never swallowed: these move money.
+
+async function paymentCall(mode: Mode, id: string, fn: string, args: Record<string, unknown>): Promise<unknown> {
+  if (mode === 'demo') throw new Error(DEMO_NO_PAYMENTS)
+  const { data, error } = await getSupabase().rpc(fn, { p_id: id, ...args })
+  if (error) throw new Error(error.message)
+  return data
+}
+
+/** Marks an issued invoice as paid in full and records the income. */
+export async function recordPayment(mode: Mode, id: string, paidOn: string, method: string): Promise<Invoice> {
+  await paymentCall(mode, id, 'record_invoice_payment', { p_paid_on: paidOn, p_method: method })
+  return getInvoice(mode, id)
+}
+
+/** The undo functions return the path of any file on the removed Income row. */
+async function removeReturnedFile(path: unknown): Promise<void> {
+  if (typeof path === 'string' && path) await removeAttachmentFile(path)
+}
+
+export async function undoPayment(mode: Mode, id: string): Promise<Invoice> {
+  await removeReturnedFile(await paymentCall(mode, id, 'undo_invoice_payment', {}))
+  return getInvoice(mode, id)
+}
+
+/** kept = 0 means the whole security deposit went back to the client. */
+export async function settleSecurityDeposit(
+  mode: Mode, id: string, settledOn: string, kept: number, reason: string,
+): Promise<Invoice> {
+  await paymentCall(mode, id, 'settle_security_deposit', { p_settled_on: settledOn, p_kept: kept, p_reason: reason })
+  return getInvoice(mode, id)
+}
+
+export async function undoSecuritySettlement(mode: Mode, id: string): Promise<Invoice> {
+  await removeReturnedFile(await paymentCall(mode, id, 'undo_security_settlement', {}))
+  return getInvoice(mode, id)
+}
+
+/** A paid deposit whose client cancelled: the income stays and no final will follow. */
+export async function closeBooking(mode: Mode, id: string, closedOn: string, reason: string): Promise<Invoice> {
+  await paymentCall(mode, id, 'close_booking', { p_closed_on: closedOn, p_reason: reason })
+  return getInvoice(mode, id)
+}
+
+export async function reopenBooking(mode: Mode, id: string): Promise<Invoice> {
+  await paymentCall(mode, id, 'reopen_booking', {})
+  return getInvoice(mode, id)
 }
 
 // ── Relationships between invoices ────────────────────────────────────────────

@@ -237,7 +237,12 @@ const DEMO_BUSINESS = {
 }
 
 const DEMO_INVOICE_BLANKS = {
-  clientNote: '', legacyDepositNo: '', replacesInvoiceId: '', pdfPath: '', voidedAt: '', voidReason: '',
+  clientNote: '', legacyDepositNo: '', replacesInvoiceId: '', pdfPath: '', voidedAt: '', voidReason: '', payment: null,
+}
+
+const DEMO_PAYMENT_BLANKS = {
+  method: 'PayNow', securityAmount: 0, securitySettledOn: '', securityKept: 0, securityNote: '',
+  bookingClosedOn: '', bookingClosedReason: '',
 }
 
 // Totals match what buildTotalsRows() in invoiceTotals.ts gives for each subtotal.
@@ -257,6 +262,71 @@ export const DEMO_INVOICES: Invoice[] = [
     adjustments: [{ label: 'Balance due later', direction: 'deduct', amount: 90 }],
     invoiceNo: '', issuedOn: '', subtotal: null, amountPayable: null, totals: null, business: null,
     createdAt: '2025-05-02T10:00:00+08:00',
+  },
+  {
+    ...DEMO_INVOICE_BLANKS,
+    id: '00000000-0000-4000-a000-000000000008',
+    status: 'issued', template: 'rental', kind: 'deposit',
+    clientId: DEMO_CLIENT_IDS['Mei Ling Chen'], clientName: 'Mei Ling Chen',
+    clientEmail: 'meiling.chen@gmail.com', clientPhone: '+65 8678 9012',
+    pwsDate: '', weddingDate: '2025-08-30',
+    terms: DEMO_INVOICE_SETTINGS.defaultTermsRental,
+    depositInvoiceId: '',
+    lines: [{ title: 'Cathedral veil rental', description: '', quantity: 1, unitAmount: 300 }],
+    adjustments: [{ label: 'Balance due later', direction: 'deduct', amount: 150 }],
+    invoiceNo: 'UA-2025-1806', issuedOn: '2025-06-09', subtotal: 300, amountPayable: 150,
+    totals: [
+      { label: 'Total',               amount: 300, bold: false },
+      { label: 'Balance due later',   amount: 150, bold: false, memo: true },
+      { label: 'Deposit Payable Now', amount: 150, bold: true  },
+    ],
+    business: DEMO_BUSINESS,
+    createdAt: '2025-06-09T10:00:00+08:00',
+  },
+  {
+    ...DEMO_INVOICE_BLANKS,
+    id: '00000000-0000-4000-a000-000000000007',
+    status: 'issued', template: 'rental', kind: 'full',
+    clientId: DEMO_CLIENT_IDS['Sarah Wong'], clientName: 'Sarah Wong',
+    clientEmail: 'sarah.wong@yahoo.com', clientPhone: '+65 9567 8901',
+    pwsDate: '', weddingDate: '',
+    terms: DEMO_INVOICE_SETTINGS.defaultTermsRental,
+    depositInvoiceId: '',
+    lines: [{ title: 'Pearl-trim veil rental', description: '', quantity: 1, unitAmount: 220 }],
+    adjustments: [{ label: 'Refundable security deposit', direction: 'add', amount: 100 }],
+    invoiceNo: 'UA-2025-1805', issuedOn: '2025-06-02', subtotal: 220, amountPayable: 320,
+    totals: [
+      { label: 'Subtotal',                    amount: 220, bold: false },
+      { label: 'Refundable security deposit', amount: 100, bold: false },
+      { label: 'Amount Payable Now',          amount: 320, bold: true  },
+    ],
+    business: DEMO_BUSINESS,
+    createdAt: '2025-06-02T10:00:00+08:00',
+    payment: { ...DEMO_PAYMENT_BLANKS, paidOn: '2025-06-03', priceAmount: 220, securityAmount: 100 },
+  },
+  {
+    ...DEMO_INVOICE_BLANKS,
+    id: '00000000-0000-4000-a000-000000000006',
+    status: 'issued', template: 'rental', kind: 'full',
+    clientId: DEMO_CLIENT_IDS['Amanda Goh'], clientName: 'Amanda Goh',
+    clientEmail: 'amanda.goh@outlook.com', clientPhone: '+65 9345 6789',
+    pwsDate: '', weddingDate: '2025-03-22',
+    terms: DEMO_INVOICE_SETTINGS.defaultTermsRental,
+    depositInvoiceId: '',
+    lines: [{ title: 'Classic tulle veil rental', description: '', quantity: 1, unitAmount: 160 }],
+    adjustments: [{ label: 'Refundable security deposit', direction: 'add', amount: 100 }],
+    invoiceNo: 'UA-2025-1804', issuedOn: '2025-03-10', subtotal: 160, amountPayable: 260,
+    totals: [
+      { label: 'Subtotal',                    amount: 160, bold: false },
+      { label: 'Refundable security deposit', amount: 100, bold: false },
+      { label: 'Amount Payable Now',          amount: 260, bold: true  },
+    ],
+    business: DEMO_BUSINESS,
+    createdAt: '2025-03-10T10:00:00+08:00',
+    payment: {
+      ...DEMO_PAYMENT_BLANKS, method: 'Bank transfer', paidOn: '2025-03-11', priceAmount: 160, securityAmount: 100,
+      securitySettledOn: '2025-03-29', securityKept: 0,
+    },
   },
   {
     ...DEMO_INVOICE_BLANKS,
@@ -282,6 +352,7 @@ export const DEMO_INVOICES: Invoice[] = [
     ],
     business: DEMO_BUSINESS,
     createdAt: '2025-01-06T11:00:00+08:00',
+    payment: { ...DEMO_PAYMENT_BLANKS, paidOn: '2025-01-07', priceAmount: 900 },
   },
   {
     ...DEMO_INVOICE_BLANKS,
@@ -309,6 +380,10 @@ export const DEMO_INVOICES: Invoice[] = [
     ],
     business: DEMO_BUSINESS,
     createdAt: '2025-05-28T15:00:00+08:00',
+    payment: {
+      ...DEMO_PAYMENT_BLANKS, paidOn: '2025-05-29', priceAmount: 120, securityAmount: 120,
+      securitySettledOn: '2025-06-10', securityKept: 40, securityNote: 'Small tear in the lace edge',
+    },
   },
   {
     ...DEMO_INVOICE_BLANKS,
@@ -332,6 +407,7 @@ export const DEMO_INVOICES: Invoice[] = [
     ],
     business: DEMO_BUSINESS,
     createdAt: '2025-01-03T09:30:00+08:00',
+    payment: { ...DEMO_PAYMENT_BLANKS, paidOn: '2025-01-04', priceAmount: 120 },
   },
   {
     ...DEMO_INVOICE_BLANKS,

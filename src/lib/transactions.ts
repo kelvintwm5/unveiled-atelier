@@ -73,6 +73,7 @@ interface TransactionRow {
   notes: string | null
   attachment_path: string | null
   attachment_name: string | null
+  source: string | null
 }
 
 interface PnlMonthRow {
@@ -91,7 +92,7 @@ interface IrasRow {
 }
 
 const TRANSACTION_COLUMNS =
-  'id, transaction_date, type, amount, category, description, payment_method, client_name, client_id, reference_no, notes, attachment_path, attachment_name'
+  'id, transaction_date, type, amount, category, description, payment_method, client_name, client_id, reference_no, notes, attachment_path, attachment_name, source'
 
 function toTransaction(r: TransactionRow): Transaction {
   return {
@@ -107,6 +108,7 @@ function toTransaction(r: TransactionRow): Transaction {
     referenceNo:   r.reference_no ?? '',
     notes:         r.notes ?? '',
     attachment:    r.attachment_path ? { path: r.attachment_path, name: r.attachment_name ?? '' } : undefined,
+    fromInvoice:   r.source !== null,
   }
 }
 
@@ -269,7 +271,7 @@ async function uploadAttachment(file: File): Promise<TransactionAttachment> {
 
 // Tidying up, so it never throws: by this point the outcome is already decided,
 // and the worst a failure leaves behind is an unused file in a private bucket.
-async function removeAttachmentFile(path: string): Promise<void> {
+export async function removeAttachmentFile(path: string): Promise<void> {
   try {
     const { error } = await getSupabase().storage.from(ATTACHMENT_BUCKET).remove([path])
     if (error) console.warn(`Couldn't remove the unused file ${path}: ${error.message}`)

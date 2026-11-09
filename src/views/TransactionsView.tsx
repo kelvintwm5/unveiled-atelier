@@ -312,19 +312,21 @@ export default function TransactionsView({ mode }: Props) {
                               d="M16.862 4.487l1.687-1.688a1.875 1.875 0 112.652 2.652L6.832 19.82a4.5 4.5 0 01-1.897 1.13l-2.685.8.8-2.685a4.5 4.5 0 011.13-1.897L16.863 4.487z" />
                           </svg>
                         </button>
-                        <button
-                          onClick={() => handleDelete(tx)}
-                          disabled={deletingId !== null}
-                          aria-label={`Delete ${tx.description}`}
-                          title="Delete"
-                          className="p-1.5 rounded-md text-stone-300 hover:text-red-600 hover:bg-red-50
-                                     transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
-                        >
-                          <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5}
-                              d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
-                          </svg>
-                        </button>
+                        {!tx.fromInvoice && (
+                          <button
+                            onClick={() => handleDelete(tx)}
+                            disabled={deletingId !== null}
+                            aria-label={`Delete ${tx.description}`}
+                            title="Delete"
+                            className="p-1.5 rounded-md text-stone-300 hover:text-red-600 hover:bg-red-50
+                                       transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+                          >
+                            <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5}
+                                d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                            </svg>
+                          </button>
+                        )}
                       </div>
                     </td>
                   )}
@@ -393,6 +395,7 @@ function TransactionModal({
   onClose: () => void
   onSaved: () => void
 }) {
+  const locked = transaction?.fromInvoice === true
   // Today in Singapore: the UTC date is still yesterday before 08:00 SGT.
   const [form, setForm] = useState(
     () => transaction ? formFromTransaction(transaction) : { ...EMPTY_FORM, date: todaySgt() },
@@ -515,18 +518,26 @@ function TransactionModal({
         <form onSubmit={handleSubmit} className="overflow-y-auto flex-1">
           <div className="px-6 py-5 grid grid-cols-2 gap-4">
 
+            {locked && (
+              <p className="col-span-2 text-sm bg-stone-100 border border-stone-200 text-stone-700 rounded-lg px-3 py-2">
+                Recorded from invoice {form.referenceNo}. To change the date, type or amount, undo it on the invoice.
+                You can still edit the notes and attach a file.
+              </p>
+            )}
+
             <Field label="Date *" className="col-span-1">
               <input
                 type="date"
                 value={form.date}
                 onChange={e => set('date', e.target.value)}
                 required
+                disabled={locked}
                 className={inputCls}
               />
             </Field>
 
             <Field label="Type *" className="col-span-1">
-              <select value={form.type} onChange={e => set('type', e.target.value as 'Income' | 'Expense')} className={inputCls}>
+              <select value={form.type} disabled={locked} onChange={e => set('type', e.target.value as 'Income' | 'Expense')} className={inputCls}>
                 <option value="Income">Income</option>
                 <option value="Expense">Expense</option>
               </select>
@@ -552,6 +563,7 @@ function TransactionModal({
                 onChange={e => set('amount', e.target.value)}
                 placeholder="0.00"
                 required
+                disabled={locked}
                 className={inputCls}
               />
             </Field>
@@ -722,7 +734,7 @@ function PaperclipIcon() {
 
 const inputCls = `w-full border border-stone-200 rounded-lg px-3 py-2 text-sm text-stone-800
   focus:outline-none focus:ring-2 focus:ring-rose-300 focus:border-transparent
-  placeholder:text-stone-300 bg-white`
+  placeholder:text-stone-300 bg-white disabled:bg-stone-100 disabled:text-stone-500`
 
 function Field({
   label,

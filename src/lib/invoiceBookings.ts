@@ -5,19 +5,59 @@
 // the client. Voiding or reissuing an invoice then needs no clean-up anywhere else.
 
 import { adjustmentsForReissue, balanceLeft, calcSubtotal, depositCollected, readPayment, toCents } from './invoiceTotals'
-import type { Client, Invoice, InvoiceDraft } from '../types'
+import { formatSGD } from './money'
+import type { Client, Invoice, InvoiceDraft, InvoicePayment } from '../types'
 
 /**
  * Issued deposits with money still to bill and no issued final. A deposit that
- * took the whole price has nothing left, so a final for it would be for $0.
+ * took the whole price has nothing left, so a final for it would be for $0, and a
+ * closed booking won't have a final at all.
  */
 export function depositsAwaitingFinal(invoices: Invoice[]): Invoice[] {
   const haveFinal = new Set(
     invoices.filter(i => i.kind === 'final' && i.status === 'issued').map(i => i.depositInvoiceId),
   )
   return invoices.filter(i => (
-    i.kind === 'deposit' && i.status === 'issued' && !haveFinal.has(i.id) && balanceLeft(i) > 0
+    i.kind === 'deposit' && i.status === 'issued' && !haveFinal.has(i.id) &&
+    balanceLeft(i) > 0 && !i.payment?.bookingClosedOn
   ))
+}
+
+/**
+ * How a payment on this invoice will divide up. This is the preview: the database
+ * works the split out again itself when the payment is recorded.
+ */
+export function paymentSplit(inv: Invoice): { price: number; security: number } {
+  const price = depositCollected(inv)
+  return { price, security: (toCents(inv.amountPayable ?? 0) - toCents(price)) / 100 }
+}
+
+/** What's still being held for the client on this payment. */
+export function securityHeld(payment: InvoicePayment | null): number {
+  return payment && payment.securityAmount > 0 && !payment.securitySettledOn ? payment.securityAmount : 0
+}
+
+/** One line on what became of a security deposit, or null if there wasn't one. */
+export function securityText(p: InvoicePayment): string | null {
+  if (p.securityAmount <= 0) return null
+  const amount = formatSGD(p.securityAmount)
+  if (!p.securitySettledOn) return `Security deposit: ${amount} held`
+  if (p.securityKept <= 0) return `Security deposit: ${amount} returned`
+  if (toCents(p.securityKept) === toCents(p.securityAmount)) return `Security deposit: ${amount} kept`
+  const returned = (toCents(p.securityAmount) - toCents(p.securityKept)) / 100
+  return `Security deposit: ${formatSGD(p.securityKept)} kept, ${formatSGD(returned)} returned`
+}
+
+/**
+ * All the security deposits Esther is holding. Her bank balance includes this money,
+ * but it isn't hers. Invoices without a linked client each count as one client.
+ */
+export function heldDeposits(invoices: Invoice[]): { total: number; clients: number } {
+  const holding = invoices.filter(i => securityHeld(i.payment) > 0)
+  return {
+    total: holding.reduce((sum, i) => sum + toCents(securityHeld(i.payment)), 0) / 100,
+    clients: new Set(holding.map(i => i.clientId || i.id)).size,
+  }
 }
 
 /**
@@ -129,15 +169,25 @@ export function clientBookings(invoices: Invoice[], clientId: string): Booking[]
     .map(({ latestAt: _latestAt, ...booking }) => booking)
 }
 
-/**
- * What the profile's summary shows. This is what was billed, not what was paid:
- * the app doesn't record payments yet.
- */
-export function clientInvoiceTotals(invoices: Invoice[], clientId: string): { invoiced: number; stillToInvoice: number } {
-  const invoiced = invoices
-    .filter(i => i.clientId === clientId && i.status === 'issued')
-    .reduce((sum, i) => sum + toCents(i.amountPayable ?? 0), 0)
-  const stillToInvoice = openDepositsFor(invoices, clientId)
-    .reduce((sum, i) => sum + toCents(balanceLeft(i)), 0)
-  return { invoiced: invoiced / 100, stillToInvoice: stillToInvoice / 100 }
+export interface ClientMoney {
+  invoiced: number       // issued invoices, security deposits included
+  received: number       // what she's been paid, security deposits included
+  toCollect: number      // issued but unpaid, plus balances not yet invoiced
+  securityHeld: number   // the part of received that's still the client's
+}
+
+/** What the profile's summary shows. */
+export function clientInvoiceTotals(invoices: Invoice[], clientId: string): ClientMoney {
+  const issued = invoices.filter(i => i.clientId === clientId && i.status === 'issued')
+  const total  = (list: Invoice[], cents: (i: Invoice) => number) => list.reduce((sum, i) => sum + cents(i), 0) / 100
+  const paid   = issued.filter(i => i.payment)
+  const unpaid = issued.filter(i => !i.payment)
+
+  return {
+    invoiced:     total(issued, i => toCents(i.amountPayable ?? 0)),
+    received:     total(paid, i => toCents(i.payment?.priceAmount ?? 0) + toCents(i.payment?.securityAmount ?? 0)),
+    toCollect:    (toCents(total(unpaid, i => toCents(i.amountPayable ?? 0))) +
+                   toCents(total(openDepositsFor(invoices, clientId), i => toCents(balanceLeft(i))))) / 100,
+    securityHeld: total(paid, i => toCents(securityHeld(i.payment))),
+  }
 }
