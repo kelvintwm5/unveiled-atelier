@@ -1,6 +1,7 @@
 import { useState } from 'react'
+import ClientInvoices from './ClientInvoices'
 import { archiveClient, createClient, updateClient } from '../lib/clientData'
-import type { Client, ClientStage, NewClient, VeilType } from '../types'
+import type { Client, ClientStage, InvoiceIntent, NewClient, VeilType } from '../types'
 
 export const STAGES: ClientStage[] = ['Inquiry', 'Consultation', 'Fitting', 'Confirmed', 'Completed', 'Lost']
 const VEIL_TYPES: VeilType[] = ['Rental', 'Bespoke Veil', 'Bespoke Rental', 'TBD']
@@ -37,9 +38,10 @@ interface Props {
   onClose: () => void
   onSaved: (client: Client) => void
   onDeleted: (client: Client) => void
+  onGoToInvoice: (intent: InvoiceIntent) => void
 }
 
-export default function ClientProfileModal({ mode, client, onClose, onSaved, onDeleted }: Props) {
+export default function ClientProfileModal({ mode, client, onClose, onSaved, onDeleted, onGoToInvoice }: Props) {
   const [form, setForm]                   = useState(() => formFor(client))
   const [saving, setSaving]               = useState(false)
   const [error, setError]                 = useState('')
@@ -48,6 +50,13 @@ export default function ClientProfileModal({ mode, client, onClose, onSaved, onD
 
   function set<K extends keyof ClientForm>(key: K, value: ClientForm[K]) {
     setForm(f => ({ ...f, [key]: value }))
+  }
+
+  // Going to an invoice closes the profile, so unsaved edits here would be lost.
+  function goToInvoice(intent: InvoiceIntent) {
+    const edited = JSON.stringify(form) !== JSON.stringify(formFor(client))
+    if (edited && !window.confirm('Leave without saving the changes to this client?')) return
+    onGoToInvoice(intent)
   }
 
   async function handleSave() {
@@ -82,6 +91,12 @@ export default function ClientProfileModal({ mode, client, onClose, onSaved, onD
         <div className="px-6 py-5 border-b border-stone-100">
           <h2 className="text-lg font-semibold text-stone-800">{client ? client.name : 'Add Client'}</h2>
         </div>
+
+        {client && (
+          <div className="px-6 py-5 border-b border-stone-100">
+            <ClientInvoices mode={mode} clientId={client.id} onGo={goToInvoice} />
+          </div>
+        )}
 
         <div className="px-6 py-5 space-y-4">
           <Field label="Name *">

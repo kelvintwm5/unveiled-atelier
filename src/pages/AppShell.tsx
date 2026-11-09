@@ -10,7 +10,7 @@ import ClientDashboardView from '../views/ClientDashboardView'
 import PipelineView from '../views/PipelineView'
 import ActivityView from '../views/ActivityView'
 import ClientChatView from '../views/ClientChatView'
-import type { AuthState } from '../types'
+import type { AuthState, InvoiceIntent } from '../types'
 
 export type View =
   | 'transactions' | 'chat' | 'monthly' | 'tax' | 'invoices' | 'pricing'
@@ -127,8 +127,14 @@ const MOBILE_NAV: { id: View; label: string; icon: JSX.Element }[] = [
 
 export default function AppShell({ auth, onSignOut }: AppShellProps) {
   const [activeView, setActiveView] = useState<View>('transactions')
+  const [invoiceIntent, setInvoiceIntent] = useState<InvoiceIntent | null>(null)
 
   const mode = auth.mode
+
+  function goToInvoice(intent: InvoiceIntent) {
+    setInvoiceIntent(intent)
+    setActiveView('invoices')
+  }
 
   return (
     <div className="flex h-[100dvh] bg-stone-50 overflow-hidden">
@@ -183,10 +189,12 @@ export default function AppShell({ auth, onSignOut }: AppShellProps) {
           {activeView === 'chat'             && <ChatView mode={mode} />}
           {activeView === 'monthly'          && <MonthlySummaryView mode={mode} />}
           {activeView === 'tax'              && <TaxSummaryView mode={mode} />}
-          {activeView === 'invoices'         && <InvoiceView mode={mode} />}
+          {activeView === 'invoices'         && (
+            <InvoiceView mode={mode} intent={invoiceIntent} onIntentDone={() => setInvoiceIntent(null)} />
+          )}
           {activeView === 'pricing'          && <PricingView />}
           {activeView === 'client-dashboard' && <ClientDashboardView mode={mode} />}
-          {activeView === 'pipeline'         && <PipelineView mode={mode} />}
+          {activeView === 'pipeline'         && <PipelineView mode={mode} onGoToInvoice={goToInvoice} />}
           {activeView === 'activity'         && <ActivityView mode={mode} />}
           {activeView === 'client-chat'      && <ClientChatView mode={mode} />}
         </main>

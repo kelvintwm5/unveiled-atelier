@@ -10,7 +10,7 @@
 // come from invoiceTotals.ts, and the database checks that they add up.
 
 import { getSupabase } from './supabase'
-import { adjustmentsForReissue, amountPayable, buildTotalsRows, calcSubtotal, depositCollected } from './invoiceTotals'
+import { adjustmentsForReissue, amountPayable, buildTotalsRows, calcSubtotal } from './invoiceTotals'
 import { DEMO_INVOICES, DEMO_INVOICE_SETTINGS, DEMO_SERVICES } from './demoData'
 import { renderFromIssued } from './invoiceRender'
 import { renderInvoicePdf } from './invoicePdf'
@@ -496,34 +496,6 @@ export function toDraft(inv: Invoice): InvoiceDraft {
 }
 
 /**
- * A final invoice drafted from an issued deposit: same client, template, dates
- * and lines, linked to the deposit by id. Starts with the deposit it actually
- * collected taken off, not counting any refundable security deposit on it.
- * Keeps the draft's own terms and note.
- */
-export function finalFromDeposit(current: InvoiceDraft, deposit: Invoice): InvoiceDraft {
-  return {
-    ...current,
-    template:         deposit.template,
-    kind:             'final',
-    clientId:         deposit.clientId,
-    clientName:       deposit.clientName,
-    clientEmail:      deposit.clientEmail,
-    clientPhone:      deposit.clientPhone,
-    pwsDate:          deposit.pwsDate,
-    weddingDate:      deposit.weddingDate,
-    depositInvoiceId: deposit.id,
-    legacyDepositNo:  '',
-    lines:            deposit.lines.map(l => ({ ...l })),
-    adjustments: [{
-      label:     `Less: deposit paid (${deposit.invoiceNo})`,
-      direction: 'deduct',
-      amount:    depositCollected(deposit),
-    }],
-  }
-}
-
-/**
  * Saves a draft and all its lines in one go (save_invoice_draft() in 0006).
  * id null creates a new draft. Returns the saved invoice.
  */
@@ -663,14 +635,6 @@ export async function getIssuedPdf(mode: Mode, inv: Invoice, invoices: Invoice[]
 }
 
 // ── Relationships between invoices ────────────────────────────────────────────
-
-/** Issued deposits that no issued final has collected the balance of yet, newest first. */
-export function depositsAwaitingFinal(invoices: Invoice[]): Invoice[] {
-  const haveFinal = new Set(
-    invoices.filter(i => i.kind === 'final' && i.status === 'issued').map(i => i.depositInvoiceId),
-  )
-  return invoices.filter(i => i.kind === 'deposit' && i.status === 'issued' && !haveFinal.has(i.id))
-}
 
 /** The invoice that replaced this one (issued) or will replace it (draft), if any. */
 export function replacementOf(invoices: Invoice[], id: string): Invoice | undefined {
