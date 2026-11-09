@@ -59,19 +59,25 @@ export default function ClientInvoices({ mode, clientId, onGo }: {
                       <button
                         type="button"
                         onClick={() => onGo({ action: 'open', invoiceId: inv.id })}
-                        className="w-full text-left px-3 py-2.5 hover:bg-stone-50 transition-colors rounded-xl
-                                   flex items-start justify-between gap-3"
+                        className="w-full text-left pl-3 pr-2 py-2.5 hover:bg-stone-50 transition-colors rounded-xl
+                                   flex items-center gap-2"
                       >
-                        <span className="min-w-0">
-                          <span className={`block text-sm ${inv.status === 'void' ? 'text-stone-400 line-through' : 'text-stone-800'}`}>
-                            {KIND_LABEL[inv.kind]}{inv.invoiceNo && ` · ${inv.invoiceNo}`}
+                        <span className="flex-1 min-w-0 flex items-start justify-between gap-3">
+                          <span className="min-w-0">
+                            <span className={`block text-sm ${inv.status === 'void' ? 'text-stone-400 line-through' : 'text-stone-800'}`}>
+                              {KIND_LABEL[inv.kind]}{inv.invoiceNo && ` · ${inv.invoiceNo}`}
+                            </span>
+                            <span className="block text-xs text-stone-500">{detail(inv, invoices)}</span>
                           </span>
-                          <span className="block text-xs text-stone-500">{detail(inv, invoices)}</span>
+                          <span className="shrink-0 text-right">
+                            <span className="block text-sm text-stone-700">{formatSGD(payableOf(inv))}</span>
+                            <InvoiceStatusBadge status={inv.status} />
+                          </span>
                         </span>
-                        <span className="shrink-0 text-right">
-                          <span className="block text-sm text-stone-700">{formatSGD(payableOf(inv))}</span>
-                          <InvoiceStatusBadge status={inv.status} />
-                        </span>
+                        {/* There's no hover on a phone, so this is what says the row opens. */}
+                        <svg className="w-5 h-5 shrink-0 text-rose-800" fill="none" viewBox="0 0 24 24" stroke="currentColor" aria-hidden="true">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+                        </svg>
                       </button>
                     </li>
                   ))}
