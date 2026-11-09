@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import {
   adjustmentsForReissue, amountPayable, buildTotalsRows, calcSubtotal, depositCollected, lineTotal,
-  paymentProblem, priceAfterExtras, readPayment, writePayment, type PaymentForm,
+  paymentProblem, priceAfterExtras, readPayment, splitTotals, writePayment, type PaymentForm,
 } from './invoiceTotals'
 import type { InvoiceAdjustment } from '../types'
 
@@ -37,12 +37,43 @@ describe('buildTotalsRows', () => {
     ])
   })
 
-  it('a deposit of any size: the subtotal less what is due later', () => {
+  it('a deposit: the balance is a plain figure for information, not a deduction', () => {
     expect(buildTotalsRows(1000, [deduct('Balance due later', 700)])).toEqual([
-      { label: 'Subtotal',           amount: 1000, bold: false },
-      { label: 'Balance due later',  amount: -700, bold: false },
-      { label: 'Amount Payable Now', amount: 300,  bold: true  },
+      { label: 'Total',               amount: 1000, bold: false },
+      { label: 'Balance due later',   amount: 700,  bold: false, memo: true },
+      { label: 'Deposit Payable Now', amount: 300,  bold: true  },
     ])
+  })
+
+  it('a deposit with a charge and a discount: the total is the price after them', () => {
+    expect(buildTotalsRows(500, [
+      add('Rush fee', 20), deduct('Friends discount', 50), deduct('Balance due later', 370),
+    ])).toEqual([
+      { label: 'Subtotal',            amount: 500, bold: false },
+      { label: 'Rush fee',            amount: 20,  bold: false },
+      { label: 'Friends discount',    amount: -50, bold: false },
+      { label: 'Total',               amount: 470, bold: false },
+      { label: 'Balance due later',   amount: 370, bold: false, memo: true },
+      { label: 'Deposit Payable Now', amount: 100, bold: true  },
+    ])
+  })
+
+  it('a deposit with a security deposit: shows both, so the rows add up', () => {
+    expect(buildTotalsRows(300, [deduct('Balance due later', 200), add('Refundable security deposit', 50)])).toEqual([
+      { label: 'Total',                       amount: 300, bold: false },
+      { label: 'Deposit',                     amount: 100, bold: false },
+      { label: 'Refundable security deposit', amount: 50,  bold: false },
+      { label: 'Balance due later',           amount: 200, bold: false, memo: true },
+      { label: 'Amount Payable Now',          amount: 150, bold: true  },
+    ])
+  })
+
+  it('a deposit keeps the amount payable as the last row, which issue_invoice() reads', () => {
+    expect(amountPayable(buildTotalsRows(1000, [deduct('Balance due later', 700)]))).toBe(300)
+  })
+
+  it('a deposit paid in full has no balance to show', () => {
+    expect(buildTotalsRows(300, [])).toEqual([{ label: 'Amount Payable Now', amount: 300, bold: true }])
   })
 
   it('a final: takes off the deposit paid', () => {
@@ -78,6 +109,24 @@ describe('buildTotalsRows', () => {
 
   it('tidies a label', () => {
     expect(buildTotalsRows(10, [add('  Fee ', 1)])[1].label).toBe('Fee')
+  })
+})
+
+describe('splitTotals', () => {
+  it('puts the balance below the amount payable when printed', () => {
+    const { above, payable, below } = splitTotals(buildTotalsRows(1000, [deduct('Balance due later', 700)]))
+    expect(above.map(r => r.label)).toEqual(['Total'])
+    expect(payable?.label).toBe('Deposit Payable Now')
+    expect(below.map(r => r.label)).toEqual(['Balance due later'])
+  })
+
+  it('leaves totals frozen before the balance moved exactly as they were', () => {
+    const old = [
+      { label: 'Subtotal',           amount: 240,  bold: false },
+      { label: 'Balance due later',  amount: -120, bold: false },
+      { label: 'Amount Payable Now', amount: 120,  bold: true  },
+    ]
+    expect(splitTotals(old)).toEqual({ above: old.slice(0, 2), payable: old[2], below: [] })
   })
 })
 

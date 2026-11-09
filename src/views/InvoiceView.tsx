@@ -5,7 +5,8 @@ import {
   draftTotals, depositsAwaitingFinal, replacementOf, payableOf, storeIssuedPdf, getIssuedPdf, listServices,
 } from '../lib/invoices'
 import {
-  lineTotal, calcSubtotal, paymentProblem, priceAfterExtras, readPayment, writePayment, type PaymentForm,
+  lineTotal, calcSubtotal, paymentProblem, priceAfterExtras, readPayment, splitTotals, writePayment,
+  type PaymentForm,
 } from '../lib/invoiceTotals'
 import { renderFromDraft } from '../lib/invoiceRender'
 import { renderInvoicePdf, openPdf } from '../lib/invoicePdf'
@@ -17,7 +18,7 @@ import FormattedText from '../components/FormattedText'
 import TermsEditor from '../components/TermsEditor'
 import type {
   Client, Invoice, InvoiceAdjustment, InvoiceDraft, InvoiceKind, InvoiceLine, InvoiceService,
-  InvoiceSettings, InvoiceTemplate,
+  InvoiceSettings, InvoiceTemplate, TotalsRow,
 } from '../types'
 
 interface Props {
@@ -1005,11 +1006,13 @@ function LinkButton({ onClick, children }: { onClick: () => void; children: Reac
   )
 }
 
-function TotalsTable({ rows }: { rows: { label: string; amount: number; bold: boolean }[] }) {
+function TotalsTable({ rows }: { rows: TotalsRow[] }) {
+  const { above, payable, below } = splitTotals(rows)
+  const printed = [...above, ...(payable ? [payable] : []), ...below]
   return (
     <div className="bg-stone-50 rounded-xl border border-stone-200 divide-y divide-stone-200">
       {/* By position: two rows can share a label now that Esther writes them. */}
-      {rows.map((row, i) => (
+      {printed.map((row, i) => (
         <div
           key={i}
           className={`flex justify-between gap-3 px-4 py-2.5 text-sm ${
