@@ -32,12 +32,29 @@ export function calcSubtotal(lines: PricedLine[]): number {
   return fromCents(lines.reduce((sum, l) => sum + toCents(l.unitAmount) * l.quantity, 0))
 }
 
+const BALANCE_LABEL      = 'Balance due later'
+const DEPOSIT_PAID_LABEL = 'Less: deposit paid'
+const SECURITY_LABEL     = 'Refundable security deposit'
+
+const sameText = (a: string, b: string) => a.trim().toLowerCase() === b.toLowerCase()
+
+const isBalanceRow  = (a: InvoiceAdjustment) => a.direction === 'deduct' && sameText(a.label, BALANCE_LABEL)
+const isSecurityRow = (a: InvoiceAdjustment) => a.direction === 'add' && sameText(a.label, SECURITY_LABEL)
+
+// 0 - x rather than -x: an empty deduction would otherwise be -0, which prints as "-$0.00".
+const signedCents = (a: InvoiceAdjustment) => (a.direction === 'deduct' ? 0 - toCents(a.amount) : toCents(a.amount))
+
+const adjustmentRow = (a: InvoiceAdjustment): TotalsRow => ({
+  label: a.label.trim(), amount: fromCents(signedCents(a)), bold: false,
+})
+
 /**
  * The totals block printed under the line items. There's no fixed deposit rule:
  * every row is one Esther added, and the amount payable is what they add up to.
  *   no payment rows : just the amount payable, which is the subtotal
  *   payment rows    : Subtotal, each row (a deduction is a negative amount), then
  *                     the amount payable
+ *   a balance left  : see depositTotalsRows
  *
  * issue_invoice() works the amount payable out again from the stored rows and
  * refuses to issue if it disagrees with the last row here.
@@ -46,16 +63,48 @@ export function calcSubtotal(lines: PricedLine[]): number {
  */
 export function buildTotalsRows(subtotal: number, adjustments: InvoiceAdjustment[]): TotalsRow[] {
   const total   = toCents(subtotal)
-  // 0 - x rather than -x: an empty deduction would otherwise be -0, which prints as "-$0.00".
-  const signed  = adjustments.map(a => (a.direction === 'deduct' ? 0 - toCents(a.amount) : toCents(a.amount)))
-  const payable = signed.reduce((sum, cents) => sum + cents, total)
-  const payableRow: TotalsRow = { label: 'Amount Payable Now', amount: fromCents(payable), bold: true }
+  const payable = adjustments.reduce((sum, a) => sum + signedCents(a), total)
 
+  const balance = adjustments.find(isBalanceRow)
+  if (balance) return depositTotalsRows(total, payable, balance, adjustments)
+
+  const payableRow: TotalsRow = { label: 'Amount Payable Now', amount: fromCents(payable), bold: true }
   if (adjustments.length === 0) return [payableRow]
+  return [{ label: 'Subtotal', amount: fromCents(total), bold: false }, ...adjustments.map(adjustmentRow), payableRow]
+}
+
+/**
+ * A deposit with a balance still to come. The balance is stored as a deduction so
+ * the sums work, but printing it as -$200 would read like money taken off the
+ * price. It's still owed, so it shows as a plain figure under the amount payable,
+ * for information.
+ *
+ * The balance row comes before the payable row here and memo moves it below when
+ * printed, because issue_invoice() reads the last row as the amount payable.
+ */
+function depositTotalsRows(
+  total: number,
+  payable: number,
+  balance: InvoiceAdjustment,
+  adjustments: InvoiceAdjustment[],
+): TotalsRow[] {
+  const security = adjustments.filter(isSecurityRow)
+  const extras   = adjustments.filter(a => a !== balance && !isSecurityRow(a))
+  const deposit  = payable - security.reduce((sum, a) => sum + toCents(a.amount), 0)
+  const hasSecurity = security.length > 0
+
   return [
-    { label: 'Subtotal', amount: fromCents(total), bold: false },
-    ...adjustments.map((a, i) => ({ label: a.label.trim(), amount: fromCents(signed[i]), bold: false })),
-    payableRow,
+    ...(extras.length > 0
+      ? [{ label: 'Subtotal', amount: fromCents(total), bold: false }, ...extras.map(adjustmentRow)]
+      : []),
+    { label: 'Total', amount: fromCents(deposit + toCents(balance.amount)), bold: false },
+    // With a security deposit the amount payable is more than the deposit, so
+    // both are shown for the rows to add up.
+    ...(hasSecurity
+      ? [{ label: 'Deposit', amount: fromCents(deposit), bold: false }, ...security.map(adjustmentRow)]
+      : []),
+    { label: balance.label.trim(), amount: fromCents(toCents(balance.amount)), bold: false, memo: true },
+    { label: hasSecurity ? 'Amount Payable Now' : 'Deposit Payable Now', amount: fromCents(payable), bold: true },
   ]
 }
 
@@ -63,13 +112,17 @@ export function amountPayable(rows: TotalsRow[]): number {
   return rows[rows.length - 1]?.amount ?? 0
 }
 
+/** The totals rows in printed order, around the amount payable. */
+export function splitTotals(rows: TotalsRow[]): { above: TotalsRow[]; payable: TotalsRow | undefined; below: TotalsRow[] } {
+  const others = rows.slice(0, -1)
+  return {
+    above: others.filter(r => !r.memo),
+    payable: rows[rows.length - 1],
+    below: others.filter(r => r.memo),
+  }
+}
+
 // ── The Payment section ────────────────────────────────────────────────────────
-
-const BALANCE_LABEL      = 'Balance due later'
-const DEPOSIT_PAID_LABEL = 'Less: deposit paid'
-const SECURITY_LABEL     = 'Refundable security deposit'
-
-const sameText = (a: string, b: string) => a.trim().toLowerCase() === b.toLowerCase()
 
 /**
  * What Esther fills in under Payment. She knows how much she's collecting, so
@@ -100,7 +153,7 @@ export function readPayment(kind: InvoiceKind, subtotal: number, adjustments: In
     (kind === 'deposit' && sameText(a.label, BALANCE_LABEL)) ||
     (kind === 'final' && a.label.trim().toLowerCase().startsWith(DEPOSIT_PAID_LABEL.toLowerCase()))
   ))
-  const securityRow = adjustments.find(a => a.direction === 'add' && sameText(a.label, SECURITY_LABEL))
+  const securityRow = adjustments.find(isSecurityRow)
   const extras = adjustments.filter(a => a !== depositRow && a !== securityRow).map(a => ({ ...a }))
 
   let depositAmount = 0
@@ -158,7 +211,7 @@ export function paymentProblem(kind: InvoiceKind, subtotal: number, form: Paymen
  */
 export function depositCollected(inv: { amountPayable: number | null; adjustments: InvoiceAdjustment[] }): number {
   const security = inv.adjustments
-    .filter(a => a.direction === 'add' && sameText(a.label, SECURITY_LABEL))
+    .filter(isSecurityRow)
     .reduce((sum, a) => sum + toCents(a.amount), 0)
   return fromCents(toCents(inv.amountPayable ?? 0) - security)
 }

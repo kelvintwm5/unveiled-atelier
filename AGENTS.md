@@ -147,7 +147,12 @@ npm test         # Vitest, for the pure domain modules in src/lib
     from revenue if the P&L ever reads invoices.
   - The one implementation is `buildTotalsRows` in `src/lib/invoiceTotals.ts`, with
     tests. `issue_invoice()` stores its rows, and checks both the subtotal and the
-    amount payable against the stored rows.
+    amount payable against the stored rows. It reads the last row as the amount
+    payable, so that row stays last in the data.
+  - "Balance due later" is stored as a `deduct` row so the sums work, but it prints
+    as a positive figure below the amount payable (`memo` on the totals row). A
+    negative balance would read like money taken off the price. "Less: deposit
+    paid" on a final stays negative, because that money has been received.
 - **Invoice lifecycle:** `draft → issued → void`.
   - Draft PDFs carry a "DRAFT" watermark and no number.
   - The issued PDF is uploaded to Supabase Storage. It is the record of what the

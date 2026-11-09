@@ -9,6 +9,7 @@ import { Document, Font, Page, StyleSheet, Text, View } from '@react-pdf/rendere
 import { parseInline, parseText, type InlineSpan } from '../lib/invoiceText'
 import { formatAmount } from '../lib/money'
 import { formatDate } from '../lib/dates'
+import { splitTotals } from '../lib/invoiceTotals'
 import type { InvoiceKind, InvoiceRender } from '../types'
 
 // Served from public/fonts (Google Fonts, SIL Open Font License). Pinyon Script and
@@ -131,8 +132,7 @@ function PageFurniture({ data }: { data: InvoiceRender }) {
 
 export default function InvoiceDocument({ data }: { data: InvoiceRender }) {
   const draft = !data.invoiceNo
-  const payable = data.totals[data.totals.length - 1]
-  const otherTotals = data.totals.slice(0, -1)
+  const { above, payable, below } = splitTotals(data.totals)
   const b = data.business
 
   return (
@@ -198,7 +198,7 @@ export default function InvoiceDocument({ data }: { data: InvoiceRender }) {
         ))}
 
         <View style={{ marginTop: 8 }} wrap={false}>
-          {otherTotals.map((row, i) => (
+          {above.map((row, i) => (
             <View key={i} style={s.totalRow}>
               <Text style={[s.totalLabel, row.bold ? s.bold : s.muted]}>{row.label}</Text>
               <Text style={s.totalAmt}>{formatAmount(row.amount)}</Text>
@@ -210,6 +210,12 @@ export default function InvoiceDocument({ data }: { data: InvoiceRender }) {
               <Text style={[s.totalAmt, s.bold]}>SGD {formatAmount(payable.amount)}</Text>
             </View>
           )}
+          {below.map((row, i) => (
+            <View key={i} style={s.totalRow}>
+              <Text style={[s.totalLabel, s.muted]}>{row.label}</Text>
+              <Text style={[s.totalAmt, s.muted]}>{formatAmount(row.amount)}</Text>
+            </View>
+          ))}
         </View>
 
         <View style={s.section} wrap={false}>

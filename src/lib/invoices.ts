@@ -126,6 +126,7 @@ function toTotals(v: unknown): TotalsRow[] | null {
     label:  String(r.label ?? ''),
     amount: Number(r.amount ?? 0),
     bold:   r.bold === true,
+    ...(r.memo === true ? { memo: true } : {}),
   }))
 }
 

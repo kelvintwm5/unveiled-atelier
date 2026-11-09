@@ -117,6 +117,7 @@ export interface TotalsRow {
   label: string
   amount: number         // SGD; negative for a deduction
   bold: boolean
+  memo?: boolean         // for information only: prints below the amount payable
 }
 
 // What the invoice editor edits. Every field is copied onto the invoice, so later
