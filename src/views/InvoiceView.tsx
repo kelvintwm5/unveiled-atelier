@@ -477,9 +477,9 @@ function DraftEditor({ mode, id, initial, invoices, clients, settings, services,
                 <SegmentGroup
                   label="This invoice is for"
                   options={[
-                    { value: 'full', label: 'Full payment' },
                     { value: 'deposit', label: 'Deposit' },
                     { value: 'final', label: 'Final payment' },
+                    { value: 'full', label: 'Full payment' },
                   ]}
                   value={draft.kind}
                   onChange={v => setKind(v as InvoiceKind)}
