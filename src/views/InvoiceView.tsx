@@ -5,6 +5,7 @@ import {
   draftTotals, replacementOf, payableOf, storeIssuedPdf, getIssuedPdf, listServices,
 } from '../lib/invoices'
 import { depositsAwaitingFinal, draftFinalFor, finalFromDeposit, heldDeposits, openDepositsFor } from '../lib/invoiceBookings'
+import { byMonth, filterCounts, filterInvoices, toCollect, type InvoiceFilter } from '../lib/invoiceList'
 import {
   balanceLeft, lineTotal, calcSubtotal, paymentProblem, priceAfterExtras, readPayment, splitTotals, writePayment,
   type PaymentForm,
@@ -13,7 +14,7 @@ import { renderFromDraft } from '../lib/invoiceRender'
 import { renderInvoicePdf, openPdf } from '../lib/invoicePdf'
 import { createClient, listClients, clientLabels } from '../lib/clientData'
 import { formatSGD } from '../lib/money'
-import { formatDate, todaySgt } from '../lib/dates'
+import { daysBetween, formatDate, formatDayMonth, todaySgt } from '../lib/dates'
 import InvoiceSettingsView from './InvoiceSettingsView'
 import FormattedText from '../components/FormattedText'
 import TermsEditor from '../components/TermsEditor'
@@ -62,6 +63,9 @@ export default function InvoiceView({ mode, intent, onIntentDone }: Props) {
   const [loading, setLoading]   = useState(true)
   const [error, setError]       = useState<string | null>(null)
   const [screen, setScreen]     = useState<Screen>({ name: 'list' })
+  // Kept here so opening an invoice and coming back returns to the same tab and search.
+  const [listFilter, setListFilter] = useState<InvoiceFilter>('all')
+  const [listSearch, setListSearch] = useState('')
 
   function reload(): Promise<void> {
     setError(null)
@@ -178,6 +182,10 @@ export default function InvoiceView({ mode, intent, onIntentDone }: Props) {
       mode={mode}
       invoices={invoices}
       error={error}
+      filter={listFilter}
+      search={listSearch}
+      onFilter={setListFilter}
+      onSearch={setListSearch}
       onNew={() => setScreen({ name: 'edit', editKey: `new-${Date.now()}`, id: null, draft: blankDraft(settings) })}
       onOpen={open}
       onSettings={() => setScreen({ name: 'settings' })}
@@ -187,20 +195,57 @@ export default function InvoiceView({ mode, intent, onIntentDone }: Props) {
 
 // ─── List ──────────────────────────────────────────────────────────────────────
 
-function InvoiceList({ mode, invoices, error, onNew, onOpen, onSettings }: {
+const LIST_TABS: { filter: InvoiceFilter; label: string; empty: string }[] = [
+  { filter: 'all',    label: 'All',    empty: 'No invoices here.' },
+  { filter: 'unpaid', label: 'Unpaid', empty: 'Nothing unpaid.' },
+  { filter: 'paid',   label: 'Paid',   empty: 'No paid invoices yet.' },
+  { filter: 'draft',  label: 'Drafts', empty: 'No drafts.' },
+  { filter: 'void',   label: 'Void',   empty: 'No void invoices.' },
+]
+
+const KIND_WORD: Record<InvoiceKind, string> = { full: 'full payment', deposit: 'deposit', final: 'final' }
+
+// What, which number and when. A void invoice says what replaced it instead of when.
+function listDetail(inv: Invoice, invoices: Invoice[]) {
+  const replacement = replacementOf(invoices, inv.id)
+  const end = inv.status === 'void' && replacement?.invoiceNo
+    ? `replaced by ${replacement.invoiceNo}`
+    : inv.status === 'draft' ? 'not issued yet' : formatDayMonth(inv.issuedOn)
+  return (
+    <>
+      {TEMPLATE_LABEL[inv.template]} {KIND_WORD[inv.kind]}
+      {inv.invoiceNo && <> · <span className={`whitespace-nowrap ${inv.status === 'void' ? 'line-through' : ''}`}>{inv.invoiceNo}</span></>}
+      {` · ${end}`}
+      {inv.status === 'issued' && replacement?.status === 'draft' && ' · replacement drafted'}
+    </>
+  )
+}
+
+function InvoiceList({ mode, invoices, error, filter, search, onFilter, onSearch, onNew, onOpen, onSettings }: {
   mode: 'demo' | 'app'
   invoices: Invoice[]
   error: string | null
+  filter: InvoiceFilter
+  search: string
+  onFilter: (filter: InvoiceFilter) => void
+  onSearch: (search: string) => void
   onNew: () => void
   onOpen: (inv: Invoice) => void
   onSettings: () => void
 }) {
-  const held = heldDeposits(invoices)
+  const held     = heldDeposits(invoices)
+  const owed     = toCollect(invoices)
+  const counts   = filterCounts(invoices)
+  const today    = todaySgt()
+  const showing  = filterInvoices(invoices, filter, search)
+  const months   = byMonth(showing)
+  const emptyTab = LIST_TABS.find(t => t.filter === filter)?.empty
+
   return (
     <div className="h-full flex flex-col">
       <Header
         title="Invoices"
-        subtitle={mode === 'demo' ? 'Sample invoices. Drafts you make here vanish on reload.' : 'Newest first'}
+        subtitle={mode === 'demo' ? 'Sample invoices. Drafts you make here vanish on reload.' : undefined}
         action={
           <div className="flex items-center gap-2 shrink-0">
             <button
@@ -231,48 +276,87 @@ function InvoiceList({ mode, invoices, error, onNew, onOpen, onSettings }: {
       />
       <div className="flex-1 overflow-y-auto px-4 py-5 md:px-8 md:py-6">
         {error && <p className="text-red-600 text-sm mb-4">{error}</p>}
-        {held.total > 0 && (
-          <p className="max-w-2xl text-sm bg-stone-100 border border-stone-200 text-stone-700 rounded-lg px-3 py-2 mb-4">
-            Holding {formatSGD(held.total)} in security deposits across {held.clients} {held.clients === 1 ? 'client' : 'clients'}.
-          </p>
-        )}
         {invoices.length === 0 ? (
           <p className="text-sm text-stone-400">No invoices yet. Tap New to start a draft.</p>
         ) : (
-          <ul className="max-w-2xl bg-white border border-stone-200 rounded-xl divide-y divide-stone-100">
-            {invoices.map(inv => {
-              const replacement = replacementOf(invoices, inv.id)
-              return (
-                <li key={inv.id}>
-                  <button
-                    onClick={() => onOpen(inv)}
-                    className="w-full text-left px-4 py-3 hover:bg-stone-50 transition-colors
-                               flex items-center gap-3"
-                  >
-                    <div className="flex-1 min-w-0">
-                      <div className="flex items-center gap-2">
-                        <span className={[
-                          'text-sm font-medium',
-                          inv.status === 'void' ? 'text-stone-400 line-through' : 'text-stone-800',
-                        ].join(' ')}>
-                          {inv.invoiceNo || 'Draft'}
+          <div className="max-w-2xl space-y-3">
+            <div>
+              <p className="text-sm text-stone-600">
+                To collect <span className="text-lg font-semibold text-stone-800">{formatSGD(owed.total)}</span>
+                {owed.count > 0 && ` from ${owed.count} ${owed.count === 1 ? 'invoice' : 'invoices'}`}
+              </p>
+              {held.total > 0 && (
+                <p className="text-xs text-stone-500">
+                  Holding {formatSGD(held.total)} in security deposits across {held.clients} {held.clients === 1 ? 'client' : 'clients'}
+                </p>
+              )}
+            </div>
+
+            <input
+              type="search" value={search} onChange={e => onSearch(e.target.value)}
+              placeholder="Search client or invoice number"
+              aria-label="Search invoices"
+              className={inputCls}
+            />
+
+            <div className="flex gap-1 overflow-x-auto" style={{ scrollbarWidth: 'none' }}>
+              {LIST_TABS.map(t => (
+                <button
+                  key={t.filter}
+                  type="button"
+                  onClick={() => onFilter(t.filter)}
+                  aria-pressed={filter === t.filter}
+                  className={[
+                    'shrink-0 text-sm px-3 py-1.5 rounded-lg transition-colors whitespace-nowrap',
+                    filter === t.filter ? 'bg-rose-50 text-rose-800 font-medium' : 'text-stone-500 hover:bg-stone-100',
+                  ].join(' ')}
+                >
+                  {t.label}{t.filter !== 'all' && counts[t.filter] > 0 && ` ${counts[t.filter]}`}
+                </button>
+              ))}
+            </div>
+
+            {months.length === 0 ? (
+              <p className="text-sm text-stone-400 py-4">
+                {search.trim() ? `No invoices match “${search.trim()}”.` : emptyTab}
+              </p>
+            ) : months.map(group => (
+              <section key={group.month}>
+                <h3 className="text-xs font-medium text-stone-500 mb-1.5">{group.month}</h3>
+                <ul className="bg-white border border-stone-200 rounded-xl divide-y divide-stone-100">
+                  {group.invoices.map(inv => (
+                    <li key={inv.id}>
+                      <button
+                        onClick={() => onOpen(inv)}
+                        className="w-full text-left pl-4 pr-2 py-3 hover:bg-stone-50 transition-colors rounded-xl
+                                   flex items-center gap-2"
+                      >
+                        <span className="flex-1 min-w-0">
+                          <span className={`block text-sm font-medium truncate ${inv.status === 'void' ? 'text-stone-400' : 'text-stone-800'}`}>
+                            {inv.clientName || 'No client yet'}
+                          </span>
+                          <span className="block text-xs text-stone-500">{listDetail(inv, invoices)}</span>
                         </span>
-                        <InvoiceStatusBadge status={inv.status} paid={inv.payment !== null} />
-                      </div>
-                      <p className="text-sm text-stone-600 truncate">{inv.clientName || 'No client yet'}</p>
-                      <p className="text-xs text-stone-400">
-                        {TEMPLATE_LABEL[inv.template]} · {KIND_LABEL[inv.kind]}
-                        {inv.issuedOn && ` · ${formatDate(inv.issuedOn)}`}
-                        {inv.status === 'void' && replacement?.invoiceNo && ` · replaced by ${replacement.invoiceNo}`}
-                        {inv.status === 'issued' && replacement?.status === 'draft' && ' · replacement drafted'}
-                      </p>
-                    </div>
-                    <span className="text-sm text-stone-700 shrink-0">{formatSGD(payableOf(inv))}</span>
-                  </button>
-                </li>
-              )
-            })}
-          </ul>
+                        <span className="shrink-0 text-right">
+                          <span className={`block text-sm ${inv.status === 'void' ? 'text-stone-400' : 'text-stone-700'}`}>
+                            {formatSGD(payableOf(inv))}
+                          </span>
+                          <InvoiceStatusBadge
+                            status={inv.status}
+                            paid={inv.payment !== null}
+                            unpaidDays={inv.issuedOn ? daysBetween(inv.issuedOn, today) : 0}
+                          />
+                        </span>
+                        <svg className="w-5 h-5 shrink-0 text-rose-800" fill="none" viewBox="0 0 24 24" stroke="currentColor" aria-hidden="true">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+                        </svg>
+                      </button>
+                    </li>
+                  ))}
+                </ul>
+              </section>
+            ))}
+          </div>
         )}
       </div>
     </div>
