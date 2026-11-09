@@ -235,6 +235,17 @@ Ask before you:
 
 ## Decisions
 
+- **2026-11-09: a client's invoices are read live and matched by deposit.**
+  - Why: copying invoice data onto the client would drift, and voiding an invoice
+    would need clean-up in a second place. The profile reads `invoices` through
+    `client_id` (`src/lib/invoiceBookings.ts`).
+  - A final is always tied to one deposit invoice, and balances are never added up
+    across a client. A client with two bookings owes each one separately.
+  - The profile shows what was billed, not what was paid. The app doesn't record
+    payments yet, so a final assumes its deposit was paid.
+  - An issued invoice's `client_id` is frozen, so the editor prompts to link a
+    client before issuing.
+
 - **2026-11-08: the Payment section asks for amounts, not rows.**
   - Why: Esther knows the deposit she's collecting. Adding a "Balance due later" row
     and choosing Subtract made her do the arithmetic and think like a bookkeeper.

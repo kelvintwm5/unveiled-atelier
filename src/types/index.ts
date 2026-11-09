@@ -185,6 +185,15 @@ export interface Invoice extends InvoiceDraft {
   createdAt: string
 }
 
+// Another screen asking the Invoices screen to open on something. There's no
+// router, so AppShell carries this across.
+//   open  → show this invoice (or edit it, if it's a draft)
+//   final → start a final payment from this deposit invoice
+export interface InvoiceIntent {
+  action: 'open' | 'final'
+  invoiceId: string
+}
+
 // Everything an invoice PDF prints, already worked out. A draft's comes from the
 // form plus today's settings; an issued invoice's only from its frozen fields, so
 // redrawing it reproduces what the client received.

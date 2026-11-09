@@ -216,6 +216,11 @@ export function depositCollected(inv: { amountPayable: number | null; adjustment
   return fromCents(toCents(inv.amountPayable ?? 0) - security)
 }
 
+/** What a deposit invoice left to be billed later. 0 if it took the whole price. */
+export function balanceLeft(inv: Parameters<typeof adjustmentsForReissue>[0]): number {
+  return adjustmentsForReissue(inv).find(isBalanceRow)?.amount ?? 0
+}
+
 // The label the old fixed rule printed on a rental final.
 const OLD_SECURITY_LABEL = 'Security Deposit (Refundable)'
 

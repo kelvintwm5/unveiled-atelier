@@ -261,6 +261,7 @@ export const DEMO_INVOICES: Invoice[] = [
   {
     ...DEMO_INVOICE_BLANKS,
     id: '00000000-0000-4000-a000-000000000003',
+    replacesInvoiceId: '00000000-0000-4000-a000-000000000005',
     status: 'issued', template: 'bespoke', kind: 'deposit',
     clientId: DEMO_CLIENT_IDS['Rachel Tan'], clientName: 'Rachel Tan',
     clientEmail: 'rachel.tan@gmail.com', clientPhone: '+65 9123 4567',
@@ -331,6 +332,29 @@ export const DEMO_INVOICES: Invoice[] = [
     ],
     business: DEMO_BUSINESS,
     createdAt: '2025-01-03T09:30:00+08:00',
+  },
+  {
+    ...DEMO_INVOICE_BLANKS,
+    id: '00000000-0000-4000-a000-000000000005',
+    status: 'void', template: 'bespoke', kind: 'deposit',
+    clientId: DEMO_CLIENT_IDS['Rachel Tan'], clientName: 'Rachel Tan',
+    clientEmail: 'rachel.tan@gmail.com', clientPhone: '+65 9123 4567',
+    pwsDate: '2025-02-15', weddingDate: '2025-04-12',
+    terms: DEMO_INVOICE_SETTINGS.defaultTermsBespoke,
+    depositInvoiceId: '',
+    lines: [
+      { title: 'Bespoke cathedral veil', description: '- Hand-applied French lace border', quantity: 1, unitAmount: 1500 },
+    ],
+    adjustments: [{ label: 'Balance due later', direction: 'deduct', amount: 750 }],
+    invoiceNo: 'UA-2025-1800', issuedOn: '2025-01-02', subtotal: 1500, amountPayable: 750,
+    totals: [
+      { label: 'Total',               amount: 1500, bold: false },
+      { label: 'Balance due later',   amount: 750,  bold: false, memo: true },
+      { label: 'Deposit Payable Now', amount: 750,  bold: true  },
+    ],
+    business: DEMO_BUSINESS,
+    voidedAt: '2025-01-06T10:55:00+08:00', voidReason: 'Blusher layer added',
+    createdAt: '2025-01-02T10:00:00+08:00',
   },
 ]
 

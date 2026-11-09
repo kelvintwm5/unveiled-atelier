@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
 import { listArchivedClients, listClients, restoreClient, updateClientStage } from '../lib/clientData'
 import ClientProfileModal, { STAGES } from '../components/ClientProfileModal'
-import type { Client, ClientStage, VeilType } from '../types'
+import type { Client, ClientStage, InvoiceIntent, VeilType } from '../types'
 
 const ALL_FILTER = 'All' as const
 const DELETED_FILTER = 'Deleted' as const
@@ -25,9 +25,10 @@ const VEIL_COLORS: Record<VeilType, string> = {
 
 interface Props {
   mode: 'demo' | 'app'
+  onGoToInvoice: (intent: InvoiceIntent) => void
 }
 
-export default function PipelineView({ mode }: Props) {
+export default function PipelineView({ mode, onGoToInvoice }: Props) {
   const [clients, setClients]       = useState<Client[]>([])
   const [archived, setArchived]     = useState<Client[]>([])
   const [loading, setLoading]       = useState(true)
@@ -189,6 +190,7 @@ export default function PipelineView({ mode }: Props) {
           onClose={() => setProfile(null)}
           onSaved={handleSaved}
           onDeleted={handleDeleted}
+          onGoToInvoice={onGoToInvoice}
         />
       )}
     </div>

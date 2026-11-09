@@ -1,28 +1,32 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import {
   listInvoices, getInvoiceSettings, saveDraft, deleteDraft, issueInvoice, voidInvoice,
-  startReplacement, blankDraft, toDraft, finalFromDeposit, defaultTerms, issueProblem,
-  draftTotals, depositsAwaitingFinal, replacementOf, payableOf, storeIssuedPdf, getIssuedPdf, listServices,
+  startReplacement, blankDraft, toDraft, defaultTerms, issueProblem,
+  draftTotals, replacementOf, payableOf, storeIssuedPdf, getIssuedPdf, listServices,
 } from '../lib/invoices'
+import { depositsAwaitingFinal, draftFinalFor, finalFromDeposit, openDepositsFor } from '../lib/invoiceBookings'
 import {
-  lineTotal, calcSubtotal, paymentProblem, priceAfterExtras, readPayment, splitTotals, writePayment,
+  balanceLeft, lineTotal, calcSubtotal, paymentProblem, priceAfterExtras, readPayment, splitTotals, writePayment,
   type PaymentForm,
 } from '../lib/invoiceTotals'
 import { renderFromDraft } from '../lib/invoiceRender'
 import { renderInvoicePdf, openPdf } from '../lib/invoicePdf'
-import { listClients, clientLabels } from '../lib/clientData'
+import { createClient, listClients, clientLabels } from '../lib/clientData'
 import { formatSGD } from '../lib/money'
 import { formatDate, todaySgt } from '../lib/dates'
 import InvoiceSettingsView from './InvoiceSettingsView'
 import FormattedText from '../components/FormattedText'
 import TermsEditor from '../components/TermsEditor'
+import InvoiceStatusBadge from '../components/InvoiceStatusBadge'
 import type {
-  Client, Invoice, InvoiceAdjustment, InvoiceDraft, InvoiceKind, InvoiceLine, InvoiceService,
+  Client, Invoice, InvoiceAdjustment, InvoiceDraft, InvoiceIntent, InvoiceKind, InvoiceLine, InvoiceService,
   InvoiceSettings, InvoiceTemplate, TotalsRow,
 } from '../types'
 
 interface Props {
   mode: 'demo' | 'app'
+  intent: InvoiceIntent | null
+  onIntentDone: () => void
 }
 
 // Which screen is showing. The editor keeps its own copy of the draft while
@@ -49,7 +53,7 @@ function errorText(err: unknown): string {
   return err instanceof Error ? err.message : String(err)
 }
 
-export default function InvoiceView({ mode }: Props) {
+export default function InvoiceView({ mode, intent, onIntentDone }: Props) {
   const [invoices, setInvoices] = useState<Invoice[]>([])
   const [settings, setSettings] = useState<InvoiceSettings | null>(null)
   const [clients, setClients]   = useState<Client[]>([])
@@ -82,6 +86,27 @@ export default function InvoiceView({ mode }: Props) {
       ? { name: 'edit', editKey: inv.id, id: inv.id, draft: toDraft(inv) }
       : { name: 'show', id: inv.id })
   }
+
+  function startFinal(deposit: Invoice, s: InvoiceSettings) {
+    const started = draftFinalFor(invoices, deposit.id)
+    if (started) { open(started); return }
+    setScreen({
+      name: 'edit',
+      editKey: `final-${deposit.id}`,
+      id: null,
+      draft: finalFromDeposit(blankDraft(s, deposit.template), deposit, clients.find(c => c.id === deposit.clientId)),
+    })
+  }
+
+  // Another screen sent Esther here for one invoice. Waits until the data has loaded.
+  useEffect(() => {
+    if (loading || !settings || !intent) return
+    const inv = invoices.find(i => i.id === intent.invoiceId)
+    if (!inv) setError('That invoice could not be found. Reload and try again.')
+    else if (intent.action === 'open') open(inv)
+    else startFinal(inv, settings)
+    onIntentDone()
+  }, [loading, settings, intent])
 
   if (loading || !settings) {
     return (
@@ -123,6 +148,8 @@ export default function InvoiceView({ mode }: Props) {
         onBack={() => { setScreen({ name: 'list' }); reload() }}
         onSaved={openSaved}
         onDeleted={() => { setScreen({ name: 'list' }); reload() }}
+        onOpen={open}
+        onClientAdded={c => setClients(prev => [...prev, c])}
       />
     )
   }
@@ -223,7 +250,7 @@ function InvoiceList({ mode, invoices, error, onNew, onOpen, onSettings }: {
                         ].join(' ')}>
                           {inv.invoiceNo || 'Draft'}
                         </span>
-                        <StatusBadge status={inv.status} />
+                        <InvoiceStatusBadge status={inv.status} />
                       </div>
                       <p className="text-sm text-stone-600 truncate">{inv.clientName || 'No client yet'}</p>
                       <p className="text-xs text-stone-400">
@@ -247,7 +274,9 @@ function InvoiceList({ mode, invoices, error, onNew, onOpen, onSettings }: {
 
 // ─── Draft editor ──────────────────────────────────────────────────────────────
 
-function DraftEditor({ mode, id, initial, invoices, clients, settings, services, onBack, onSaved, onDeleted }: {
+function DraftEditor({
+  mode, id, initial, invoices, clients, settings, services, onBack, onSaved, onDeleted, onOpen, onClientAdded,
+}: {
   mode: 'demo' | 'app'
   id: string | null
   initial: InvoiceDraft
@@ -258,12 +287,14 @@ function DraftEditor({ mode, id, initial, invoices, clients, settings, services,
   onBack: () => void
   onSaved: (inv: Invoice, notice?: string) => Promise<void>
   onDeleted: () => void
+  onOpen: (inv: Invoice) => void
+  onClientAdded: (client: Client) => void
 }) {
   const [edited, setDraft] = useState<InvoiceDraft>(initial)
   const [payment, setPayment] = useState<PaymentForm>(
     () => readPayment(initial.kind, calcSubtotal(initial.lines), initial.adjustments),
   )
-  const [busy, setBusy]   = useState<'save' | 'issue' | 'delete' | null>(null)
+  const [busy, setBusy]   = useState<'save' | 'issue' | 'delete' | 'client' | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [saved, setSaved] = useState(false)
   const [pdfLink, setPdfLink] = useState<string | null>(null)
@@ -291,6 +322,16 @@ function DraftEditor({ mode, id, initial, invoices, clients, settings, services,
     const linked = invoices.find(i => i.id === draft.depositInvoiceId)
     return linked && !open.includes(linked) ? [linked, ...open] : open
   }, [invoices, draft.depositInvoiceId])
+  // This client's deposits still waiting for a final, once she's picked the client.
+  const clientDeposits = useMemo(
+    () => (draft.depositInvoiceId || draft.replacesInvoiceId ? [] : openDepositsFor(invoices, draft.clientId)),
+    [invoices, draft.clientId, draft.depositInvoiceId, draft.replacesInvoiceId],
+  )
+  const otherDraftFinal = draft.depositInvoiceId ? draftFinalFor(invoices, draft.depositInvoiceId, id) : undefined
+  const hasServices = edited.lines.some(l => l.title.trim() !== '' || l.unitAmount > 0)
+  // Someone already in the tracker whose name she typed instead of picking.
+  const typedName = draft.clientName.trim().toLowerCase()
+  const sameName  = clients.filter(c => c.name.trim().toLowerCase() === typedName)
 
   const totals   = draftTotals(draft)
   const noPaymentDetails = !settings.paynow.trim() && !settings.bankAccountNo.trim()
@@ -357,16 +398,20 @@ function DraftEditor({ mode, id, initial, invoices, clients, settings, services,
     setSaved(false)
   }
 
+  function linkDeposit(dep: Invoice) {
+    const next = finalFromDeposit(edited, dep, clients.find(c => c.id === dep.clientId))
+    // The deposit may use the other template; unedited terms follow it, as in setTemplate.
+    setDraft(edited.terms === defaultTerms(settings, edited.template)
+      ? { ...next, terms: defaultTerms(settings, next.template) }
+      : next)
+    setPayment(readPayment('final', calcSubtotal(next.lines), next.adjustments))
+    setSaved(false)
+  }
+
   function pickDeposit(depositId: string) {
     const dep = invoices.find(i => i.id === depositId)
     if (dep) {
-      const next = finalFromDeposit(edited, dep)
-      // The deposit may use the other template; unedited terms follow it, as in setTemplate.
-      setDraft(edited.terms === defaultTerms(settings, edited.template)
-        ? { ...next, terms: defaultTerms(settings, next.template) }
-        : next)
-      setPayment(readPayment('final', calcSubtotal(next.lines), next.adjustments))
-      setSaved(false)
+      linkDeposit(dep)
     } else {
       update({ depositInvoiceId: '' })
       setPayment(p => ({ ...p, depositLabel: '' }))
@@ -375,9 +420,37 @@ function DraftEditor({ mode, id, initial, invoices, clients, settings, services,
 
   function pickClient(clientId: string) {
     const c = clients.find(x => x.id === clientId)
-    update(c
-      ? { clientId: c.id, clientName: c.name, clientEmail: c.email, clientPhone: c.phone, weddingDate: c.weddingDate || draft.weddingDate }
-      : { clientId: '' })
+    if (!c) { update({ clientId: '' }); return }
+    // A blank final for a client with exactly one open deposit can only mean that
+    // deposit. Anything less clear-cut waits for her to choose in the notice below.
+    const open = openDepositsFor(invoices, c.id)
+    if (
+      edited.kind === 'final' && !edited.depositInvoiceId && !hasServices &&
+      open.length === 1 && !draftFinalFor(invoices, open[0].id, id)
+    ) {
+      linkDeposit(open[0])
+      return
+    }
+    update({ clientId: c.id, clientName: c.name, clientEmail: c.email, clientPhone: c.phone, weddingDate: c.weddingDate || draft.weddingDate })
+  }
+
+  async function addClient() {
+    setBusy('client')
+    setError(null)
+    try {
+      // She's invoicing them, so they're past the enquiry stages.
+      const client = await createClient(mode, {
+        name: draft.clientName, email: draft.clientEmail, phone: draft.clientPhone,
+        weddingDate: draft.weddingDate, veilType: draft.template === 'rental' ? 'Rental' : 'Bespoke Veil',
+        budget: 0, stage: 'Confirmed', notes: '', activityNotes: '',
+      })
+      onClientAdded(client)
+      update({ clientId: client.id })
+    } catch (err) {
+      setError(errorText(err))
+    } finally {
+      setBusy(null)
+    }
   }
 
   function updateLine(idx: number, patch: Partial<InvoiceLine>) {
@@ -508,9 +581,15 @@ function DraftEditor({ mode, id, initial, invoices, clients, settings, services,
                       ))}
                     </select>
                   </Field>
+                  {otherDraftFinal && (
+                    <p className="text-sm bg-rose-50 border border-rose-200 text-rose-900 rounded-lg px-3 py-2">
+                      This deposit already has a final in draft, and only one can be issued.{' '}
+                      <LinkButton onClick={() => onOpen(otherDraftFinal)}>Open that draft</LinkButton>
+                    </p>
+                  )}
                   {draft.depositInvoiceId ? (
                     <p className="text-xs text-stone-400">
-                      Client, dates and line items were copied from the deposit. You can still edit them.
+                      Client, dates, line items, charges and discounts were copied from the deposit. You can still edit them.
                     </p>
                   ) : (
                     <Field label="Deposit invoice no. issued before the app (optional)">
@@ -534,6 +613,37 @@ function DraftEditor({ mode, id, initial, invoices, clients, settings, services,
                     {clients.map(c => <option key={c.id} value={c.id}>{labels.get(c.id)}</option>)}
                   </select>
                 </Field>
+                {clientDeposits.length > 0 && (
+                  <div className="sm:col-span-2 bg-rose-50 border border-rose-200 rounded-lg px-3 py-2.5 space-y-2">
+                    <p className="text-sm text-rose-900">
+                      {clientDeposits.length === 1
+                        ? 'This client has a deposit waiting for its final payment.'
+                        : `This client has ${clientDeposits.length} deposits waiting for a final payment. Pick the one this invoice is for.`}
+                    </p>
+                    {clientDeposits.map(d => {
+                      const started = draftFinalFor(invoices, d.id, id)
+                      return (
+                        <div key={d.id} className="flex items-center justify-between gap-3">
+                          <span className="min-w-0 text-xs text-rose-900">
+                            <span className="block font-medium">{d.invoiceNo} · {d.lines[0]?.title}</span>
+                            <span className="block">{formatSGD(balanceLeft(d))} still to invoice</span>
+                          </span>
+                          <button
+                            type="button"
+                            onClick={() => (started ? onOpen(started) : linkDeposit(d))}
+                            className="shrink-0 text-sm font-medium text-rose-800 bg-white border border-rose-200
+                                       hover:bg-rose-100 rounded-lg px-3 py-1.5 transition-colors"
+                          >
+                            {started ? 'Open draft' : 'Create final'}
+                          </button>
+                        </div>
+                      )
+                    })}
+                    {hasServices && (
+                      <p className="text-xs text-rose-800">Creating a final replaces the service details below.</p>
+                    )}
+                  </div>
+                )}
                 <Field label="Full Name *" className="sm:col-span-2">
                   <input
                     type="text" value={draft.clientName}
@@ -632,6 +742,37 @@ function DraftEditor({ mode, id, initial, invoices, clients, settings, services,
                 )}
               </div>
             </Section>
+
+            {!draft.clientId && typedName && (
+              <div className="bg-stone-100 border border-stone-200 rounded-lg px-3 py-2.5 space-y-2">
+                <p className="text-sm text-stone-700">
+                  Not linked to a client, so this invoice won't appear on a client profile. It can't be linked after it's issued.
+                </p>
+                <div className="flex flex-wrap gap-2">
+                  {sameName.length > 0 ? sameName.map(c => (
+                    <button
+                      key={c.id}
+                      type="button"
+                      onClick={() => pickClient(c.id)}
+                      className="text-sm font-medium text-rose-800 bg-white border border-rose-200 hover:bg-rose-50
+                                 rounded-lg px-3 py-1.5 transition-colors"
+                    >
+                      Link to {labels.get(c.id)}
+                    </button>
+                  )) : (
+                    <button
+                      type="button"
+                      onClick={addClient}
+                      disabled={busy !== null}
+                      className="text-sm font-medium text-rose-800 bg-white border border-rose-200 hover:bg-rose-50
+                                 rounded-lg px-3 py-1.5 transition-colors disabled:opacity-50"
+                    >
+                      {busy === 'client' ? 'Adding…' : `Add ${draft.clientName.trim()} to clients`}
+                    </button>
+                  )}
+                </div>
+              </div>
+            )}
 
             {error && <p className="text-red-600 text-sm">{error}</p>}
             {saved && !error && <p className="text-emerald-700 text-sm">Draft saved.</p>}
@@ -777,7 +918,7 @@ function IssuedInvoice({ mode, invoice, invoices, notice, onBack, onOpen, onChan
         title={invoice.invoiceNo}
         subtitle={`${TEMPLATE_LABEL[invoice.template]} · ${KIND_LABEL[invoice.kind]} · issued ${formatDate(invoice.issuedOn)}`}
         onBack={onBack}
-        action={<StatusBadge status={invoice.status} />}
+        action={<InvoiceStatusBadge status={invoice.status} />}
       />
 
       <div className="flex-1 overflow-y-auto px-4 py-5 md:px-8 md:py-6">
@@ -982,19 +1123,6 @@ function BlockedTabLink({ url }: { url: string }) {
         Open the PDF
       </a>
     </p>
-  )
-}
-
-function StatusBadge({ status }: { status: Invoice['status'] }) {
-  const style = {
-    draft:  'bg-stone-100 text-stone-500',
-    issued: 'bg-rose-50 text-rose-800',
-    void:   'bg-red-50 text-red-700',
-  }[status]
-  return (
-    <span className={`text-xs font-medium px-2 py-0.5 rounded-full shrink-0 ${style}`}>
-      {status === 'draft' ? 'Draft' : status === 'issued' ? 'Issued' : 'Void'}
-    </span>
   )
 }
 
